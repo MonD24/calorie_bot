@@ -65,6 +65,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
             # Успешно проанализировали
             description = result['description']
             kcal = result['calories']
+            protein = result.get('protein')
 
             # Предлагаем подтвердить или уточнить
             keyboard = [
@@ -72,17 +73,26 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 [InlineKeyboardButton('✏️ Уточнить', callback_data='edit_photo')]
             ]
 
+            # Формируем текст с калориями и белком
+            nutrition_text = f'🔥 **Калории:** {kcal} ккал'
+            if protein is not None:
+                nutrition_text += f'\n🥩 **Белок:** {protein} г'
+
             await analyzing_msg.edit_text(
-                f'📸 **Распознано:**\n{description}\n\n🔥 **Калории:** {kcal} ккал\n\nВерно?',
+                f'📸 **Распознано:**\n{description}\n\n{nutrition_text}\n\nВерно?',
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode='Markdown'
             )
 
             # Сохраняем данные для подтверждения
-            context.user_data['pending_photo_dish'] = {
+            dish_data = {
                 'description': description,
                 'kcal': kcal
             }
+            if protein is not None:
+                dish_data['protein'] = protein
+                
+            context.user_data['pending_photo_dish'] = dish_data
             context.user_data['pending_photo_base64'] = img_b64
 
         else:
@@ -106,6 +116,7 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
         dish_data = context.user_data.get('pending_photo_dish', {})
         description = dish_data.get('description', 'Блюдо с фото')
         kcal = dish_data.get('kcal', 0)
+        protein = dish_data.get('protein')
 
         if kcal:
             # Сохраняем данные
@@ -118,7 +129,7 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
 
             if today not in food_log:
                 food_log[today] = []
-            food_log[today].append([description, kcal])
+            food_log[today].append([description, kcal, protein])
             save_user_food_log(user_id, food_log)
 
             # Рассчитываем остаток
