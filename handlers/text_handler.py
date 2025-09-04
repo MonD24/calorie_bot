@@ -18,7 +18,7 @@ from utils.user_data import (
     get_user_food_log, save_user_food_log, get_user_burned
 )
 from utils.calorie_calculator import (
-    create_calorie_prompt, ask_gpt, extract_calories_smart,
+    create_calorie_prompt, ask_gpt, extract_nutrition_smart,
     validate_calorie_result, get_calories_left_message,
     calculate_bmr_tdee
 )
@@ -209,14 +209,15 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
             context.user_data['waiting_for_clarification'] = True
             return
 
-        # Извлекаем калории
-        kcal = extract_calories_smart(response)
-        if not kcal:
+        # Извлекаем калории и белок
+        nutrition = extract_nutrition_smart(response)
+        if not nutrition['calories']:
             await update.message.reply_text('Не удалось распознать калории. Попробуйте описать блюдо подробнее.')
             return
 
         # Валидируем результат
-        kcal = validate_calorie_result(text, kcal)
+        kcal = validate_calorie_result(text, nutrition['calories'])
+        protein = nutrition.get('protein')
 
         # Сохраняем данные
         diary[today] += kcal
@@ -224,15 +225,20 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
         
         if today not in food_log:
             food_log[today] = []
-        food_log[today].append([text, kcal])
+        food_log[today].append([text, kcal, protein])
         save_user_food_log(user_id, food_log)
 
         # Рассчитываем остаток калорий
         burned = get_user_burned(user_id)
         left_message = get_calories_left_message(profile, diary, burned, today)
 
+        # Формируем сообщение с информацией о питании
+        nutrition_text = f'{kcal} ккал'
+        if protein:
+            nutrition_text += f', {protein}г белка'
+
         await update.message.reply_text(
-            f'Блюдо: {text}, {kcal} ккал. {left_message}.',
+            f'Блюдо: {text}, {nutrition_text}. {left_message}.',
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton('Сколько осталось калорий?', callback_data='check_left')]
             ])
@@ -306,12 +312,13 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
         messages = [{'role': 'user', 'content': [{'type': 'text', 'text': prompt}]}]
         response = await ask_gpt(messages)
 
-        kcal = extract_calories_smart(response)
-        if not kcal:
+        nutrition = extract_nutrition_smart(response)
+        if not nutrition['calories']:
             await update.message.reply_text('Не удалось распознать калории. Попробуйте ещё раз.')
             return
 
-        kcal = validate_calorie_result(final_description, kcal)
+        kcal = validate_calorie_result(final_description, nutrition['calories'])
+        protein = nutrition.get('protein')
 
         # Сохраняем результат
         diary[today] += kcal
@@ -319,15 +326,20 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
         
         if today not in food_log:
             food_log[today] = []
-        food_log[today].append([final_description, kcal])
+        food_log[today].append([final_description, kcal, protein])
         save_user_food_log(user_id, food_log)
 
         # Рассчитываем остаток калорий
         burned = get_user_burned(user_id)
         left_message = get_calories_left_message(profile, diary, burned, today)
 
+        # Формируем сообщение с информацией о питании
+        nutrition_text = f'{kcal} ккал'
+        if protein:
+            nutrition_text += f', {protein}г белка'
+
         await update.message.reply_text(
-            f'Блюдо: {final_description}, {kcal} ккал. {left_message}.',
+            f'Блюдо: {final_description}, {nutrition_text}. {left_message}.',
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton('Сколько осталось калорий?', callback_data='check_left')]
             ])

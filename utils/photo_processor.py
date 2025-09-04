@@ -13,13 +13,13 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from utils.calorie_calculator import ask_gpt, extract_calories_smart, validate_calorie_result
+from utils.calorie_calculator import ask_gpt, extract_nutrition_smart, validate_calorie_result
 from data.calorie_database import CALORIE_DATABASE
 
 
 async def analyze_food_photo(image_base64: str) -> Dict[str, Any]:
     """Анализирует фото еды через GPT Vision"""
-    prompt = f"""Определи что за еда на фото и ТОЧНО рассчитай калорийность.
+    prompt = f"""Определи что за еда на фото и ТОЧНО рассчитай калорийность и белок.
 
 Используй следующие справочные данные:
 {CALORIE_DATABASE}
@@ -27,14 +27,14 @@ async def analyze_food_photo(image_base64: str) -> Dict[str, Any]:
 ВАЖНЫЕ ПРАВИЛА:
 1. ВНИМАТЕЛЬНО оцени размер порции относительно посуды/ложки на фото
 2. Стандартные порции: столовая ложка ~15г, чайная ~5г, стакан ~200мл
-3. Творог 200г = ~160 ккал, дыня 100г = ~35 ккал, варенье 1 ч.л. = ~20 ккал
+3. Творог 200г = ~160 ккал и 35г белка, дыня 100г = ~35 ккал и 0.6г белка
 4. НЕ ЗАВЫШАЙ калорийность! Будь консервативен в оценках
 5. Если сомневаешься между двумя значениями - выбирай меньшее
 
 ФОРМАТ ОТВЕТА:
-Дай краткое описание блюда, затем укажи калорийность после "Итого:".
+Дай краткое описание блюда, затем укажи калорийность и белок в формате: "X ккал, Y г белка"
 
-Пример: "Творог с кусочками дыни и ложкой варенья. Итого: 280 ккал"
+Пример: "Творог с кусочками дыни и ложкой варенья. Итого: 280 ккал, 35 г белка"
 
 Если нужно уточнение - задай ОДИН вопрос с "ВОПРОС:".
 """
@@ -61,17 +61,23 @@ async def analyze_food_photo(image_base64: str) -> Dict[str, Any]:
             question = response.replace("ВОПРОС:", "").strip()
             return {'question': question}
         
-        # Извлекаем калории и описание
-        kcal = extract_calories_from_photo_response(response)
+        # Извлекаем калории, белок и описание
+        nutrition = extract_nutrition_smart(response)
         description = extract_description_from_photo_response(response)
         
-        if kcal and description:
-            validated_kcal = validate_calorie_result(description, kcal)
-            return {
+        if nutrition['calories'] and description:
+            validated_kcal = validate_calorie_result(description, nutrition['calories'])
+            result = {
                 'description': description,
                 'calories': validated_kcal,
                 'success': True
             }
+            
+            # Добавляем белок если найден
+            if nutrition['protein'] is not None:
+                result['protein'] = round(nutrition['protein'], 1)
+            
+            return result
         else:
             return {'error': 'Не удалось извлечь калории или описание из ответа'}
             
