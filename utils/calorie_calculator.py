@@ -21,15 +21,9 @@ try:
     OPENAI_AVAILABLE = True
     logging.info("OpenAI client инициализирован (новая версия)")
 except ImportError:
-    try:
-        # Fallback для старой версии
-        import openai
-        openai.api_key = OPENAI_API_KEY
-        OPENAI_AVAILABLE = True
-        logging.info("OpenAI инициализирован (старая версия)")
-    except ImportError:
-        OPENAI_AVAILABLE = False
-        logging.warning("OpenAI library not available. GPT features will be disabled.")
+    OPENAI_AVAILABLE = False
+    client = None
+    logging.warning("OpenAI library not available. GPT features will be disabled.")
 
 
 def calculate_bmr_tdee(weight: float, height: float, age: int, sex: str, goal: str = 'deficit') -> Dict[str, Any]:
@@ -164,34 +158,25 @@ async def ask_gpt(messages: list) -> str:
         raise Exception("OpenAI library not available")
     
     try:
-        # Проверяем, какая версия OpenAI используется
-        if 'client' in globals():
-            # Новая версия OpenAI API (1.0+)
-            # Определяем модель: используем gpt-4o для vision задач, gpt-4o-mini для текста
-            has_image = any(
-                isinstance(msg.get('content'), list) and 
-                any(item.get('type') == 'image_url' for item in msg.get('content', []))
-                for msg in messages
-            )
-            model = "gpt-4o" if has_image else "gpt-4o-mini"
+        # Используем только новую версия OpenAI API (1.0+)
+        if 'client' not in globals() or client is None:
+            raise Exception("OpenAI client not initialized")
             
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=500,
-                temperature=0.1
-            )
-            return response.choices[0].message.content.strip()
-        else:
-            # Старая версия OpenAI API - используем gpt-4o для совместимости
-            import openai
-            response = await openai.ChatCompletion.acreate(
-                model="gpt-4o",
-                messages=messages,
-                max_tokens=500,
-                temperature=0.1
-            )
-            return response.choices[0].message.content.strip()
+        # Определяем модель: используем gpt-4o для vision задач, gpt-4o-mini для текста
+        has_image = any(
+            isinstance(msg.get('content'), list) and 
+            any(item.get('type') == 'image_url' for item in msg.get('content', []))
+            for msg in messages
+        )
+        model = "gpt-4o" if has_image else "gpt-4o-mini"
+        
+        response = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=500,
+            temperature=0.1
+        )
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"OpenAI API error: {e}")
         raise
