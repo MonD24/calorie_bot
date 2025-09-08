@@ -12,6 +12,9 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Блокируем старые методы OpenAI
+import openai_safe
+
 from utils.user_data import (
     get_user_profile, save_user_profile, get_user_diary, 
     save_user_diary, get_user_weights, save_user_weights,

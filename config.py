@@ -3,21 +3,54 @@
 Конфигурационный файл для калорийного бота
 """
 import os
+import logging
 from pathlib import Path
 
+# Настраиваем логирование для отладки конфигурации
+logger = logging.getLogger(__name__)
+
 # Загружаем переменные окружения из .env файла (если есть)
+env_loaded = False
+dotenv_available = False
+
 try:
     from dotenv import load_dotenv
+    dotenv_available = True
     env_path = Path(__file__).parent / '.env'
+    
+    logger.info(f"🔍 Проверяем .env файл: {env_path}")
+    
     if env_path.exists():
-        load_dotenv(env_path)
+        logger.info(f"✅ .env файл найден: {env_path}")
+        result = load_dotenv(env_path)
+        env_loaded = result
+        logger.info(f"📂 Результат загрузки .env: {result}")
+    else:
+        logger.warning(f"⚠️ .env файл не найден: {env_path}")
+        
 except ImportError:
-    # python-dotenv не установлен, используем только системные переменные окружения
-    pass
+    logger.warning("⚠️ python-dotenv не установлен, используем только системные переменные окружения")
+    
+except Exception as e:
+    logger.error(f"❌ Ошибка загрузки .env: {e}")
 
 # API ключи (приоритет: переменные окружения -> значения по умолчанию)
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN_HERE')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', 'YOUR_OPENAI_API_KEY_HERE')
+
+# Отладочная информация о загруженных ключах
+if TELEGRAM_BOT_TOKEN != 'YOUR_TELEGRAM_BOT_TOKEN_HERE':
+    logger.info(f"✅ TELEGRAM_BOT_TOKEN загружен (длина: {len(TELEGRAM_BOT_TOKEN)})")
+else:
+    logger.warning("⚠️ TELEGRAM_BOT_TOKEN использует значение по умолчанию")
+
+if OPENAI_API_KEY != 'YOUR_OPENAI_API_KEY_HERE':
+    logger.info(f"✅ OPENAI_API_KEY загружен (длина: {len(OPENAI_API_KEY)})")
+else:
+    logger.warning("⚠️ OPENAI_API_KEY использует значение по умолчанию")
+
+# Сводная информация
+logger.info(f"📊 Конфигурация: dotenv={'✅' if dotenv_available else '❌'}, env_loaded={'✅' if env_loaded else '❌'}")
 
 # ВАЖНО: Для продакшена установите токены через переменные окружения или .env файл!
 # Никогда не делитесь этими токенами и не коммитьте их в git!

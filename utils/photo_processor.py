@@ -13,6 +13,9 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Блокируем старые методы OpenAI
+import openai_safe
+
 from utils.calorie_calculator import ask_gpt, extract_nutrition_smart, validate_calorie_result
 from data.calorie_database import CALORIE_DATABASE
 
