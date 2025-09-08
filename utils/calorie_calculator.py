@@ -71,6 +71,13 @@ def create_calorie_prompt(description: str, is_clarification: bool = False) -> s
 3. Если не указан вес, используй стандартные порции взрослого человека
 4. При сомнениях в размере порции, бери средние значения
 
+ОСОБОЕ ВНИМАНИЕ К ВЫСОКОКАЛОРИЙНЫМ ПРОДУКТАМ:
+- Арахисовая паста: 588 ккал/100г (1 ст.л. = ~15г = ~90 ккал)
+- Масла: 750+ ккал/100г (1 ст.л. = ~15г = ~115 ккал)
+- Орехи: 550-650 ккал/100г
+- Сыры: 300-400 ккал/100г
+- Не недооценивай количество этих продуктов на фото!
+
 """
     
     if is_clarification:
@@ -104,6 +111,10 @@ def validate_calorie_result(description: str, kcal: int) -> int:
     has_low_cal = any(word in description_lower for word in LOW_CAL_KEYWORDS)
     has_high_cal = any(word in description_lower for word in HIGH_CAL_KEYWORDS)
     
+    # НОВАЯ ПРОВЕРКА: Специфичные высококалорийные продукты
+    high_cal_products = ['арахисовая паста', 'нутелла', 'масло', 'орехи', 'сыр']
+    has_very_high_cal = any(product in description_lower for product in high_cal_products)
+    
     if has_low_cal and kcal > 500:
         adjusted = min(kcal, 300)
         logging.info(f"Adjusting high calories for low-cal food: {description} ({kcal} -> {adjusted})")
@@ -111,6 +122,14 @@ def validate_calorie_result(description: str, kcal: int) -> int:
     
     if has_high_cal and kcal < 200:
         adjusted = max(kcal, 250)
+        logging.info(f"Adjusting low calories for high-cal food: {description} ({kcal} -> {adjusted})")
+        return adjusted
+    
+    # НОВАЯ ЛОГИКА: Проверка блюд с арахисовой пастой и другими очень калорийными продуктами
+    if has_very_high_cal and kcal < 300:
+        adjusted = max(kcal, 350)  # Минимум 350 ккал для блюд с арахисовой пастой
+        logging.info(f"Adjusting low calories for very high-cal product: {description} ({kcal} -> {adjusted})")
+        return adjusted
         logging.info(f"Adjusting low calories for high-cal food: {description} ({kcal} -> {adjusted})")
         return adjusted
     
