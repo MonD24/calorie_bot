@@ -71,12 +71,28 @@ def create_calorie_prompt(description: str, is_clarification: bool = False) -> s
 3. Если не указан вес, используй стандартные порции взрослого человека
 4. При сомнениях в размере порции, бери средние значения
 
+РАСПОЗНАВАНИЕ ЖАРЕНЫХ ИЗДЕЛИЙ:
+- Если видишь золотистое полукруглое жареное изделие - это ЧЕБУРЕК (120г = 300 ккал)
+- Сразу давай точный расчет: "Это чебурек. 300 ккал, 10г белка"
+- НЕ спрашивай про начинку и вес - используй стандартные значения
+
 ОСОБОЕ ВНИМАНИЕ К ВЫСОКОКАЛОРИЙНЫМ ПРОДУКТАМ:
 - Арахисовая паста: 588 ккал/100г (1 ст.л. = ~15г = ~90 ккал)
 - Масла: 750+ ккал/100г (1 ст.л. = ~15г = ~115 ккал)
 - Орехи: 550-650 ккал/100г
 - Сыры: 300-400 ккал/100г
 - Не недооценивай количество этих продуктов на фото!
+
+РАСПОЗНАВАНИЕ ПОПУЛЯРНЫХ БЛЮД:
+- ШАУРМА: обычно в лаваше с мясом, овощами, соусом. Средняя порция 300-400г = 750-1200 ккал
+- Если видишь лаваш с начинкой или завернутое блюдо в фольге - скорее всего шаурма
+- ЧЕБУРЕК: жареный полукруглый пирожок золотистого цвета с хрустящим тестом
+- Если видишь золотистое жареное изделие полукруглой формы - это чебурек (средний 120г = 300 ккал)
+- БЕЛЯШ: круглый жареный пирожок с открытой серединкой
+- ПИРОЖОК ЖАРЕНЫЙ: любой жареный пирожок золотистого цвета
+- ПИЦЦА: треугольный кусок = ~1/8 пиццы (~150г), целая пицца = ~1200г
+- БУРГЕРЫ: стандартный = 200-250г, большой = 300-400г
+- РОЛЛЫ/СУШИ: 1 ролл = 20-30г, порция обычно 6-8 роллов
 
 """
     
@@ -129,8 +145,6 @@ def validate_calorie_result(description: str, kcal: int) -> int:
     if has_very_high_cal and kcal < 300:
         adjusted = max(kcal, 350)  # Минимум 350 ккал для блюд с арахисовой пастой
         logging.info(f"Adjusting low calories for very high-cal product: {description} ({kcal} -> {adjusted})")
-        return adjusted
-        logging.info(f"Adjusting low calories for high-cal food: {description} ({kcal} -> {adjusted})")
         return adjusted
     
     return kcal
@@ -254,27 +268,38 @@ def get_calories_left_message(profile: Dict[str, Any], diary: Dict[str, int],
     target_calories = profile.get('target_calories')
     old_target_limit = profile.get('target_limit')  # Совместимость со старыми профилями
     goal = profile.get('goal', 'deficit')
+    is_custom_limit = profile.get('custom_limit', False)
     
     eaten_today = diary.get(today, 0)
     burned_today = burned.get(today, 0)
     
     if target_calories:
-        # Новая система с автоматическим расчётом
+        # Система с лимитом калорий
         left = target_calories - eaten_today
         
-        goal_names = {
-            'deficit': 'до цели похудения',
-            'maintain': 'до поддержания веса',
-            'surplus': 'до цели набора массы'
-        }
-        goal_name = goal_names.get(goal, 'до цели')
-        
-        if left > 0:
-            left_message = f"Осталось {goal_name}: {left} ккал"
-            if burned_today > 0:
-                left_message += f" (+ {burned_today} ккал за активность)"
+        if is_custom_limit:
+            # Пользовательский лимит
+            if left > 0:
+                left_message = f"Осталось до вашего лимита: {left} ккал"
+                if burned_today > 0:
+                    left_message += f" (+ {burned_today} ккал за активность)"
+            else:
+                left_message = f"Превышение вашего лимита: {abs(left)} ккал"
         else:
-            left_message = f"Превышение {goal_name.replace('до ', '')}: {abs(left)} ккал"
+            # Автоматический расчет по цели
+            goal_names = {
+                'deficit': 'до цели похудения',
+                'maintain': 'до поддержания веса',
+                'surplus': 'до цели набора массы'
+            }
+            goal_name = goal_names.get(goal, 'до цели')
+            
+            if left > 0:
+                left_message = f"Осталось {goal_name}: {left} ккал"
+                if burned_today > 0:
+                    left_message += f" (+ {burned_today} ккал за активность)"
+            else:
+                left_message = f"Превышение {goal_name.replace('до ', '')}: {abs(left)} ккал"
             
     elif old_target_limit:
         # Старая система с ручным лимитом (для совместимости)

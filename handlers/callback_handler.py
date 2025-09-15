@@ -105,6 +105,11 @@ async def handle_goal_selection(query, context, user_id, goal_data):
     # Обновляем профиль
     profile.update(calc_result)
     profile['target_calories'] = calc_result['target']
+    # Сбрасываем флаг пользовательского лимита, так как теперь используется автоматический расчет
+    profile['custom_limit'] = False
+    # Удаляем registration_step, так как регистрация завершена
+    if 'registration_step' in profile:
+        del profile['registration_step']
     save_user_profile(user_id, profile)
     
     goal_names = {
@@ -245,7 +250,12 @@ async def handle_confirm_photo(query, context, user_id):
         await query.edit_message_text(response_text, reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Error confirming photo: {e}")
-        await query.message.reply_text('❌ Ошибка при подтверждении фото.')
+        await query.message.reply_text(
+            f'❌ Ошибка при подтверждении фото:\n'
+            f'`{str(e)}`\n\n'
+            f'Тип ошибки: {type(e).__name__}\n'
+            f'Попробуйте ещё раз или обратитесь к разработчику.'
+        )
 
 
 async def handle_edit_photo(query, context, user_id):
@@ -259,7 +269,12 @@ async def handle_edit_photo(query, context, user_id):
         await query.edit_message_text(response_text, reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Error editing photo: {e}")
-        await query.message.reply_text('❌ Ошибка при редактировании фото.')
+        await query.message.reply_text(
+            f'❌ Ошибка при редактировании фото:\n'
+            f'`{str(e)}`\n\n'
+            f'Тип ошибки: {type(e).__name__}\n'
+            f'Попробуйте ещё раз или обратитесь к разработчику.'
+        )
 
 # Алиас для совместимости
 handle_callback = handle_callback_query

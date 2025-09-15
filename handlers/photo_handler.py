@@ -106,7 +106,10 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logging.error(f"Error processing photo: {e}")
         await update.message.reply_text(
-            '❌ Ошибка при обработке фото.\n\nОпишите блюдо текстом для расчета калорий.'
+            f'❌ Ошибка при обработке фото:\n'
+            f'`{str(e)}`\n\n'
+            f'Тип ошибки: {type(e).__name__}\n'
+            f'Опишите блюдо текстом для расчета калорий или обратитесь к разработчику.'
         )
 
 
@@ -132,7 +135,11 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
 
             if today not in food_log:
                 food_log[today] = []
-            food_log[today].append([description, kcal, protein])
+            # Добавляем запись с безопасной обработкой protein
+            log_entry = [description, kcal]
+            if protein is not None:
+                log_entry.append(protein)
+            food_log[today].append(log_entry)
             save_user_food_log(user_id, food_log)
 
             # Рассчитываем остаток

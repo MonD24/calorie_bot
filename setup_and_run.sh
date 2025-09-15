@@ -3,6 +3,46 @@
 # Единый скрипт установки и запуска калорийного бота
 # Использование: ./setup_and_run.sh
 
+# Автоисправление концов строк Windows -> Linux
+fix_line_endings() {
+    local script_path="$0"
+    local temp_file="/tmp/$(basename "$script_path").tmp"
+    
+    # Проверяем, есть ли Windows line endings
+    if command -v file >/dev/null && file "$script_path" | grep -q "CRLF"; then
+        echo "🔧 Обнаружены Windows line endings, исправляем..."
+        
+        # Исправляем через sed
+        if sed 's/\r$//' "$script_path" > "$temp_file" 2>/dev/null; then
+            mv "$temp_file" "$script_path"
+            chmod +x "$script_path"
+            echo "✅ Line endings исправлены, перезапускаем скрипт..."
+            exec "$script_path" "$@"
+        else
+            # Fallback - через tr
+            tr -d '\r' < "$script_path" > "$temp_file" 2>/dev/null && \
+            mv "$temp_file" "$script_path" && \
+            chmod +x "$script_path" && \
+            echo "✅ Line endings исправлены (tr), перезапускаем скрипт..." && \
+            exec "$script_path" "$@"
+        fi
+    fi
+    
+    # Исправляем все .sh файлы в директории
+    for sh_file in *.sh; do
+        if [[ -f "$sh_file" && "$sh_file" != "$(basename "$script_path")" ]]; then
+            if command -v file >/dev/null && file "$sh_file" | grep -q "CRLF"; then
+                echo "🔧 Исправляем $sh_file..."
+                sed -i 's/\r$//' "$sh_file" 2>/dev/null || tr -d '\r' < "$sh_file" > "${sh_file}.tmp" && mv "${sh_file}.tmp" "$sh_file"
+                chmod +x "$sh_file"
+            fi
+        fi
+    done
+}
+
+# Запускаем автоисправление в самом начале
+fix_line_endings "$@"
+
 set -e
 
 # Цвета для вывода
@@ -56,18 +96,34 @@ success() {
 
 # Функция остановки бота
 stop_bot() {
+    log "Остановка всех процессов бота..."
+    
+    # Останавливаем по PID файлу
     if [[ -f "$PID_FILE" ]]; then
         local pid=$(cat "$PID_FILE")
         if kill -0 "$pid" 2>/dev/null; then
             log "Остановка бота (PID: $pid)..."
             kill "$pid"
-            rm -f "$PID_FILE"
             sleep 2
+            # Принудительно убиваем если не остановился
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -9 "$pid" 2>/dev/null || true
+            fi
         fi
+        rm -f "$PID_FILE"
     fi
     
-    # Убиваем все процессы Python с main.py
-    pkill -f "python.*main.py" 2>/dev/null || true
+    # Убиваем все процессы Python с calorie_bot
+    pkill -f "python.*calorie_bot" 2>/dev/null || true
+    pkill -f "calorie_bot_modular.py" 2>/dev/null || true
+    
+    # Дополнительная проверка и принудительное завершение
+    sleep 1
+    local remaining_pids=$(pgrep -f "calorie_bot" 2>/dev/null || true)
+    if [[ -n "$remaining_pids" ]]; then
+        log "Принудительно завершаем оставшиеся процессы..."
+        echo "$remaining_pids" | xargs -r kill -9 2>/dev/null || true
+    fi
     
     log "Бот остановлен"
 }
@@ -216,12 +272,7 @@ start_bot() {
     export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
     
     # Запускаем через nohup
-    nohup python3 -c "
-import sys
-sys.path.insert(0, '$PROJECT_DIR')
-import main
-main.main()
-" > "$LOG_FILE" 2>&1 &
+    nohup python3 calorie_bot_modular.py > "$LOG_FILE" 2>&1 &
     
     # Сохраняем PID
     echo $! > "$PID_FILE"
@@ -269,6 +320,18 @@ show_logs() {
     fi
 }
 
+# Интерактивный запуск бота
+run_interactive() {
+    log "Запуск бота в интерактивном режиме..."
+    
+    cd "$PROJECT_DIR"
+    source "$VENV_DIR/bin/activate"
+    export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+    
+    info "Для остановки нажмите Ctrl+C"
+    python3 calorie_bot_modular.py
+}
+
 # Главная функция
 main() {
     case "${1:-install}" in
@@ -313,6 +376,9 @@ main() {
         "logs")
             show_logs
             ;;
+        "run"|"interactive")
+            run_interactive
+            ;;
         "update")
             log "🔄 Обновление зависимостей..."
             source "$VENV_DIR/bin/activate"
@@ -331,17 +397,19 @@ main() {
             ./fix_openai.sh
             ;;
         *)
-            echo "Использование: $0 {install|start|stop|restart|status|logs|update|fix-openai}"
+            echo "Использование: $0 {install|start|stop|restart|status|logs|run|interactive|update|fix-openai}"
             echo
             echo "Команды:"
-            echo "  install     - полная установка и запуск (по умолчанию)"
-            echo "  start       - запустить бота"
-            echo "  stop        - остановить бота"
-            echo "  restart     - перезапустить бота"
-            echo "  status      - проверить статус"
-            echo "  logs        - показать логи"
-            echo "  update      - обновить зависимости и перезапустить"
-            echo "  fix-openai  - исправить проблемы с OpenAI API"
+            echo "  install      - полная установка и запуск (по умолчанию)"
+            echo "  start        - запустить бота в фоне"
+            echo "  run          - запустить бота в интерактивном режиме"
+            echo "  interactive  - то же что и run"
+            echo "  stop         - остановить бота"
+            echo "  restart      - перезапустить бота"
+            echo "  status       - проверить статус"
+            echo "  logs         - показать логи"
+            echo "  update       - обновить зависимости и перезапустить"
+            echo "  fix-openai   - исправить проблемы с OpenAI API"
             exit 1
             ;;
     esac
