@@ -29,15 +29,51 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     profile = get_user_profile(user_id)
 
-    # Проверяем, есть ли уже профиль пользователя
-    if not profile or ('target_calories' not in profile and 'norm' not in profile):
-        # Если профиля нет, начинаем регистрацию
-        profile = {}
+    # Проверяем, есть ли уже полный профиль пользователя
+    required_fields = ['weight', 'height', 'age', 'sex']
+    has_complete_profile = profile and all(field in profile for field in required_fields)
+    has_target_calories = profile and ('target_calories' in profile or 'norm' in profile)
+    
+    if not has_complete_profile or not has_target_calories:
+        # Если профиля нет или он неполный, начинаем/продолжаем регистрацию
+        if not profile:
+            profile = {}
+        
+        # Определяем, на каком этапе регистрации находимся
+        if 'weight' not in profile:
+            await update.message.reply_text('Привет! Введи свой вес (кг):')
+            profile['registration_step'] = 'weight'
+            context.user_data['step'] = 'weight'
+        elif 'height' not in profile:
+            await update.message.reply_text('Теперь введи свой рост (см):')
+            profile['registration_step'] = 'height'
+            context.user_data['step'] = 'height'
+        elif 'age' not in profile:
+            await update.message.reply_text('Теперь введи свой возраст:')
+            profile['registration_step'] = 'age'
+            context.user_data['step'] = 'age'
+        elif 'sex' not in profile:
+            await update.message.reply_text('Укажи пол (муж/жен):')
+            profile['registration_step'] = 'sex'
+            context.user_data['step'] = 'sex'
+        else:
+            # Все поля есть, но нет target_calories - показываем выбор цели
+            from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+            keyboard = [
+                [InlineKeyboardButton('🔥 Похудение (дефицит 20%)', callback_data='goal_deficit')],
+                [InlineKeyboardButton('⚖️ Поддержание веса', callback_data='goal_maintain')],
+                [InlineKeyboardButton('💪 Набор массы (профицит 10%)', callback_data='goal_surplus')]
+            ]
+            await update.message.reply_text(
+                '🎯 Выберите вашу цель:',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            profile['registration_step'] = 'goal'
+            context.user_data['step'] = 'goal'
+        
         save_user_profile(user_id, profile)
-        await update.message.reply_text('Привет! Введи свой вес (кг):')
-        context.user_data['step'] = 'weight'
     else:
-        # Если профиль уже есть, показываем информацию
+        # Если профиль уже есть и полный, показываем информацию
         await show_user_status(update, user_id)
         context.user_data['step'] = 'food'
 
@@ -140,13 +176,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /start - Начать работу или показать статус
 /help - Эта справка
 /goal - Установить цель (похудение/поддержание/набор массы)
+/limit - Установить собственный лимит калорий
 /weight - Записать текущий вес
 /burn - Записать потраченные калории
 /left - Узнать остаток калорий на день
 /food - Показать дневник еды за день
 /clear\_today - Очистить записи за сегодня
 /reset - Сбросить профиль (начать заново)
-/limit - Установить лимит калорий (старая система)
 
 🍽️ *Как добавлять еду:*
 • Отправьте фото блюда для автоматического анализа
@@ -242,11 +278,52 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /limit - установка лимита калорий (устаревшая)"""
-    await update.message.reply_text(
-        '⚠️ Команда /limit устарела!\n\n'
-        'Используйте /goal для автоматического расчета калорий на основе ваших параметров и цели.'
-    )
+    """Команда /limit - установка собственного лимита калорий"""
+    user_id = str(update.effective_user.id)
+    profile = get_user_profile(user_id)
+    
+    # Проверяем аргументы
+    if context.args:
+        try:
+            new_limit = int(context.args[0])
+            if 800 <= new_limit <= 5000:  # Разумные пределы
+                profile['target_calories'] = new_limit
+                profile['custom_limit'] = True  # Помечаем как пользовательский лимит
+                save_user_profile(user_id, profile)
+                
+                await update.message.reply_text(
+                    f'✅ Установлен собственный лимит: {new_limit} ккал/день\n\n'
+                    f'💡 Чтобы вернуться к автоматическому расчету, используйте /goal'
+                )
+            else:
+                await update.message.reply_text(
+                    '❌ Лимит должен быть от 800 до 5000 ккал в день\n'
+                    'Пример: /limit 2000'
+                )
+        except ValueError:
+            await update.message.reply_text(
+                '❌ Неверный формат!\n'
+                'Пример: /limit 2000'
+            )
+    else:
+        # Показываем текущий лимит и инструкции
+        current_limit = profile.get('target_calories', 'не установлен')
+        is_custom = profile.get('custom_limit', False)
+        
+        if is_custom:
+            limit_type = "собственный"
+        else:
+            limit_type = "автоматический"
+        
+        await update.message.reply_text(
+            f'🎯 Текущий лимит калорий: {current_limit} ккал ({limit_type})\n\n'
+            f'📝 Для установки собственного лимита:\n'
+            f'/limit [число]\n\n'
+            f'Примеры:\n'
+            f'• /limit 2000 - установить 2000 ккал в день\n'
+            f'• /limit 1800 - установить 1800 ккал в день\n\n'
+            f'💡 Для автоматического расчета используйте /goal'
+        )
 
 
 async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -254,23 +331,12 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     today = datetime.date.today().isoformat()
     
-    # DEBUG: Добавляем детальное логирование
-    logging.info(f"🔍 DEBUG food_log_command: Пользователь {user_id}, дата {today}")
-    
     try:
         food_log = get_user_food_log(user_id)
-        logging.info(f"🔍 DEBUG food_log_command: Полный food_log = {food_log}")
-        logging.info(f"🔍 DEBUG food_log_command: Тип food_log = {type(food_log)}")
-        logging.info(f"🔍 DEBUG food_log_command: Ключи в food_log = {list(food_log.keys())}")
-        
         today_foods = food_log.get(today, [])
-        logging.info(f"🔍 DEBUG food_log_command: Еда за {today} = {today_foods}")
-        logging.info(f"🔍 DEBUG food_log_command: Количество записей = {len(today_foods)}")
         
         if not today_foods:
-            logging.info("🔍 DEBUG food_log_command: Нет записей, отправляем сообщение")
             await update.message.reply_text('📝 Сегодня пока ничего не записано.')
-            logging.info("🔍 DEBUG food_log_command: Сообщение о пустом дневнике отправлено")
             return
         
         # Создаем детальный обзор
@@ -279,19 +345,15 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_protein = 0
         
         for i, food_entry in enumerate(today_foods, 1):
-            logging.info(f"🔍 DEBUG food_log_command: Обрабатываем запись {i}: {food_entry}")
-            
             if len(food_entry) >= 3:  # Новый формат с белком
                 name, calories, protein = food_entry[0], food_entry[1], food_entry[2]
                 protein_text = f', {protein}г белка' if protein else ''
-                logging.info(f"🔍 DEBUG food_log_command: Новый формат - {name}, {calories}ккал, {protein}г белка")
             elif len(food_entry) >= 2:  # Старый формат без белка
                 name, calories = food_entry[0], food_entry[1]
                 protein = 0
                 protein_text = ''
-                logging.info(f"🔍 DEBUG food_log_command: Старый формат - {name}, {calories}ккал")
             else:
-                logging.warning(f"🔍 DEBUG food_log_command: Неправильный формат записи: {food_entry}")
+                logging.warning(f"Неправильный формат записи в дневнике: {food_entry}")
                 continue
             
             total_calories += calories
@@ -307,15 +369,10 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_lines.append(f'💪 Белок: {total_protein}г')
         
         message_text = '\n'.join(message_lines)
-        logging.info(f"🔍 DEBUG food_log_command: Готовое сообщение длиной {len(message_text)} символов")
-        logging.info(f"🔍 DEBUG food_log_command: Отправляем: {message_text}")
-        
         await update.message.reply_text(message_text, parse_mode='Markdown')
-        logging.info("🔍 DEBUG food_log_command: Сообщение отправлено УСПЕШНО!")
         
     except Exception as e:
-        logging.error(f"🔍 DEBUG food_log_command: ОШИБКА - {e}")
-        logging.error(f"🔍 DEBUG food_log_command: Traceback - {traceback.format_exc()}")
+        logging.error(f"Ошибка в food_log_command: {e}")
         await update.message.reply_text(f'❌ Ошибка при получении дневника: {str(e)}')
 
 

@@ -18,13 +18,14 @@ import openai_safe
 from utils.user_data import (
     get_user_profile, save_user_profile, get_user_diary, 
     save_user_diary, get_user_weights, save_user_weights,
-    get_user_food_log, save_user_food_log, get_user_burned
+    get_user_food_log, save_user_food_log, get_user_burned, save_user_burned
 )
 from utils.calorie_calculator import (
     create_calorie_prompt, ask_gpt, extract_nutrition_smart,
     validate_calorie_result, get_calories_left_message,
     calculate_bmr_tdee
 )
+from utils.error_handler import format_error_message, log_detailed_error
 from config import VALIDATION_LIMITS
 
 
@@ -40,6 +41,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     diary = get_user_diary(user_id)
     weights = get_user_weights(user_id)
     food_log = get_user_food_log(user_id)
+
+    # Проверяем, есть ли сохраненный шаг регистрации в профиле
+    if not step and profile and 'registration_step' in profile:
+        step = profile['registration_step']
+        context.user_data['step'] = step
 
     # Инициализируем дневник на сегодня, если записи ещё нет
     if today not in diary:
@@ -91,6 +97,7 @@ async def handle_weight_input(update, context, text, profile, user_id):
         limits = VALIDATION_LIMITS['weight']
         if limits['min'] <= weight <= limits['max']:
             profile['weight'] = weight
+            profile['registration_step'] = 'height'
             save_user_profile(user_id, profile)
             await update.message.reply_text('Теперь введи свой рост (см):')
             context.user_data['step'] = 'height'
@@ -107,6 +114,7 @@ async def handle_height_input(update, context, text, profile, user_id):
         limits = VALIDATION_LIMITS['height']
         if limits['min'] <= height <= limits['max']:
             profile['height'] = height
+            profile['registration_step'] = 'age'
             save_user_profile(user_id, profile)
             await update.message.reply_text('Теперь введи свой возраст:')
             context.user_data['step'] = 'age'
@@ -123,6 +131,7 @@ async def handle_age_input(update, context, text, profile, user_id):
         limits = VALIDATION_LIMITS['age']
         if limits['min'] <= age <= limits['max']:
             profile['age'] = age
+            profile['registration_step'] = 'sex'
             save_user_profile(user_id, profile)
             await update.message.reply_text('Укажи пол (муж/жен):')
             context.user_data['step'] = 'sex'
@@ -140,6 +149,7 @@ async def handle_sex_input(update, context, text, profile, user_id):
         return
     
     profile['sex'] = sex
+    profile['registration_step'] = 'goal'
     save_user_profile(user_id, profile)
     
     # Теперь спрашиваем о цели
@@ -179,7 +189,6 @@ async def handle_burn_calories(update, context, text, user_id, today):
         if 0 <= burned_calories <= 5000:  # Разумные пределы
             burned = get_user_burned(user_id)
             burned[today] = burned_calories
-            from ..utils.user_data import save_user_burned
             save_user_burned(user_id, burned)
             await update.message.reply_text(f'✅ Записано: потрачено {burned_calories} ккал')
             context.user_data['step'] = None
@@ -189,13 +198,82 @@ async def handle_burn_calories(update, context, text, user_id, today):
         await update.message.reply_text('Введите количество потраченных калорий числом, например: 300')
 
 
+def parse_manual_calories(text):
+    """Парсит текст на предмет явного указания калорий пользователем
+    
+    Поддерживаемые форматы:
+    - "шоколадка, 205 ккал"
+    - "шоколадка 205 ккал"  
+    - "шоколадка - 205ккал"
+    - "шоколадка: 205 калорий"
+    
+    Returns:
+        tuple: (food_name, calories) или (None, None) если не найдено
+    """
+    import re
+    
+    # Различные паттерны для поиска калорий
+    patterns = [
+        r'^(.+?)[,\-:\s]+(\d+)\s*(?:ккал|калори[йяе]|калорий|kcal)\s*$',
+        r'^(.+?)\s+(\d+)\s*(?:ккал|калори[йяе]|калорий|kcal)\s*$',
+    ]
+    
+    text_clean = text.strip()
+    
+    for pattern in patterns:
+        match = re.search(pattern, text_clean, re.IGNORECASE)
+        if match:
+            food_name = match.group(1).strip()
+            calories = int(match.group(2))
+            
+            # Проверяем разумность значения калорий
+            if 1 <= calories <= 5000:  # Разумный диапазон для одного приема пищи
+                return food_name, calories
+    
+    return None, None
+
+
 async def handle_food_input(update, context, text, user_id, today, diary, food_log, profile):
     """Обработка описания еды"""
     # Проверяем, не ввел ли пользователь просто число (возможный вес или калории)
     if await handle_ambiguous_number(update, context, text):
         return
 
-    # Обрабатываем как описание еды
+    # Проверяем, не указал ли пользователь калории в явном виде
+    food_name, manual_calories = parse_manual_calories(text)
+    if food_name and manual_calories:
+        # Пользователь сам указал калории - не обращаемся к GPT
+        try:
+            # Сохраняем данные напрямую
+            diary[today] += manual_calories
+            save_user_diary(user_id, diary)
+            
+            if today not in food_log:
+                food_log[today] = []
+            food_log[today].append([food_name, manual_calories, None])  # Белок не указан
+            save_user_food_log(user_id, food_log)
+
+            # Рассчитываем остаток калорий
+            burned = get_user_burned(user_id)
+            left_message = get_calories_left_message(profile, diary, burned, today)
+
+            await update.message.reply_text(
+                f'✅ Записано: {food_name}, {manual_calories} ккал. {left_message}.',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton('Сколько осталось калорий?', callback_data='check_left')]
+                ])
+            )
+            return
+            
+        except Exception as e:
+            log_detailed_error(e, "при сохранении ручного ввода калорий", str(user_id), 
+                             {"food_name": food_name, "calories": manual_calories})
+            error_msg = format_error_message(e, "при сохранении данных", 
+                                           f'Блюдо: "{food_name}", калории: {manual_calories}')
+            await update.message.reply_text(error_msg)
+            return
+
+    # Обрабатываем как описание еды через GPT
     try:
         prompt = create_calorie_prompt(text)
         messages = [{'role': 'user', 'content': [{'type': 'text', 'text': prompt}]}]
@@ -248,8 +326,10 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
         )
 
     except Exception as e:
-        logging.error(f"Error processing food input: {e}")
-        await update.message.reply_text('Не удалось обработать описание еды. Попробуйте ещё раз.')
+        log_detailed_error(e, "при обработке описания еды через GPT", str(user_id), 
+                         {"user_text": text})
+        error_msg = format_error_message(e, "при обработке описания еды", f'Ваш текст: "{text}"')
+        await update.message.reply_text(error_msg)
 
 
 async def handle_ambiguous_number(update, context, text):
@@ -349,8 +429,11 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
         )
 
     except Exception as e:
-        logging.error(f"Error processing clarification: {e}")
-        await update.message.reply_text('Не удалось обработать уточнение. Попробуйте ещё раз.')
+        log_detailed_error(e, "при обработке уточнения еды", str(user_id), 
+                         {"original_description": original_description, "clarification": clarification})
+        error_msg = format_error_message(e, "при обработке уточнения", 
+                                       f'Исходное: "{original_description}", Уточнение: "{clarification}"')
+        await update.message.reply_text(error_msg)
 
     # Сбрасываем флаги
     context.user_data['waiting_for_clarification'] = False
