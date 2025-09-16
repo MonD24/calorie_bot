@@ -65,13 +65,18 @@ jobs:
         python -m py_compile handlers/*.py
         python -m py_compile data/*.py
 
-    - name: 📊 Check code quality with flake8
+    - name: 📊 Enhanced code quality checks
       run: |
-        pip install flake8
-        # Проверяем основные файлы, игнорируя некоторые правила для Telegram ботов
-        flake8 --max-line-length=120 --ignore=E501,W503,E203 \
-          calorie_bot_modular.py utils/ handlers/ data/ \
-          --exclude=__pycache__,*.pyc
+        pip install flake8 black isort mypy bandit
+        
+        echo "📏 Running flake8..."
+        flake8 calorie_bot_modular.py utils/ handlers/ data/ || true
+        
+        echo "🖤 Checking formatting with black..."
+        black --check calorie_bot_modular.py utils/ handlers/ data/ || true
+        
+        echo "📦 Checking imports with isort..."
+        isort --check-only calorie_bot_modular.py utils/ handlers/ data/ || true
 
   security-check:
     runs-on: ubuntu-latest

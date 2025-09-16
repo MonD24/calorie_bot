@@ -77,15 +77,18 @@ jobs:
 
     - name: 🔧 Install dev dependencies
       run: |
-        pip install flake8 bandit
+        pip install flake8 black isort bandit
 
-    - name: 📏 Code style check
+    - name: 📏 Code quality checks
       run: |
         echo "📏 Running flake8..."
-        flake8 --max-line-length=120 --ignore=E501,W503,E203 \
-          --statistics --count \
-          calorie_bot_modular.py utils/ handlers/ data/ \
-          --exclude=__pycache__,*.pyc || true
+        flake8 calorie_bot_modular.py utils/ handlers/ data/ || true
+        
+        echo "🖤 Checking formatting with black..."
+        black --check --diff calorie_bot_modular.py utils/ handlers/ data/ || true
+        
+        echo "📦 Checking imports with isort..."
+        isort --check-only --diff calorie_bot_modular.py utils/ handlers/ data/ || true
 
     - name: 🔒 Security check
       run: |
