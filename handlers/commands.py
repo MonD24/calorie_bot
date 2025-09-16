@@ -17,7 +17,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 import openai_safe
 
 from utils.user_data import (
-    get_user_profile, save_user_profile, get_user_diary, save_user_diary, 
+    get_user_profile, save_user_profile, get_user_diary, save_user_diary,
     get_user_burned, get_user_food_log, save_user_food_log, save_user_burned
 )
 from utils.calorie_calculator import calculate_bmr_tdee, get_calories_left_message, get_macro_analysis_command
@@ -33,12 +33,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     required_fields = ['weight', 'height', 'age', 'sex']
     has_complete_profile = profile and all(field in profile for field in required_fields)
     has_target_calories = profile and ('target_calories' in profile or 'norm' in profile)
-    
+
     if not has_complete_profile or not has_target_calories:
         # Если профиля нет или он неполный, начинаем/продолжаем регистрацию
         if not profile:
             profile = {}
-        
+
         # Определяем, на каком этапе регистрации находимся
         if 'weight' not in profile:
             await update.message.reply_text('Привет! Введи свой вес (кг):')
@@ -70,7 +70,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             profile['registration_step'] = 'goal'
             context.user_data['step'] = 'goal'
-        
+
         save_user_profile(user_id, profile)
     else:
         # Если профиль уже есть и полный, показываем информацию
@@ -84,36 +84,36 @@ async def show_user_status(update: Update, user_id: str):
     diary = get_user_diary(user_id)
     burned = get_user_burned(user_id)
     today = datetime.date.today().isoformat()
-    
+
     # Инициализируем дневник на сегодня, если записи ещё нет
     if today not in diary:
         diary[today] = 0
         from ..utils.user_data import save_user_diary
         save_user_diary(user_id, diary)
-    
+
     eaten_today = diary.get(today, 0)
     burned_today = burned.get(today, 0)
-    
+
     # Получаем параметры для отображения
     target_calories = profile.get('target_calories')
     bmr = profile.get('bmr', 0)
     tdee = profile.get('tdee', 0)
     goal = profile.get('goal', 'deficit')
-    
+
     goal_names = {
         'deficit': '🔥 Похудение',
         'maintain': '⚖️ Поддержание веса',
         'surplus': '💪 Набор массы'
     }
     goal_name = goal_names.get(goal, 'Не указана')
-    
+
     # Получаем сообщение об остатке калорий
     left_message = get_calories_left_message(profile, diary, burned, today)
 
     if target_calories:
         # Новая система с автоматическим расчётом
         net_calories = eaten_today - burned_today
-        
+
         status_msg = f"""🔥 С возвращением!
 
 📊 Ваши параметры:
@@ -131,7 +131,7 @@ async def show_user_status(update: Update, user_id: str):
         # Старая система (для совместимости)
         norm = profile.get('norm', 0)
         target_limit = profile.get('target_limit')
-        
+
         if target_limit:
             net_calories = eaten_today - burned_today
             deficit = norm - target_limit
@@ -197,7 +197,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 🎯 *Система целей:*
 🔥 Похудение - дефицит 20% от нормы
-⚖️ Поддержание веса - норма калорий  
+⚖️ Поддержание веса - норма калорий
 💪 Набор массы - профицит 10% от нормы
 
 ⏰ *Автоматические функции:*
@@ -206,7 +206,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Умные подсказки и валидация данных
 
 💡 *Совет:* Для быстрого доступа к командам начните вводить "/" в поле сообщения"""
-    
+
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 
@@ -217,7 +217,7 @@ async def goal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton('⚖️ Поддержание веса', callback_data='goal_maintain')],
         [InlineKeyboardButton('💪 Набор массы (профицит 10%)', callback_data='goal_surplus')]
     ]
-    
+
     await update.message.reply_text(
         '🎯 Выберите вашу цель:',
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -243,7 +243,7 @@ async def left_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diary = get_user_diary(user_id)
     burned = get_user_burned(user_id)
     today = datetime.date.today().isoformat()
-    
+
     left_message = get_calories_left_message(profile, diary, burned, today)
     await update.message.reply_text(left_message)
 
@@ -252,20 +252,20 @@ async def clear_today_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Команда /clear_today - очистка записей за день"""
     user_id = str(update.effective_user.id)
     today = datetime.date.today().isoformat()
-    
+
     # Очищаем данные за сегодня
     diary = get_user_diary(user_id)
     food_log = get_user_food_log(user_id)
     burned = get_user_burned(user_id)
-    
+
     diary[today] = 0
     food_log[today] = []
     burned[today] = 0
-    
+
     save_user_diary(user_id, diary)
     save_user_food_log(user_id, food_log)
     save_user_burned(user_id, burned)
-    
+
     await update.message.reply_text('✅ Записи за сегодня очищены!')
 
 
@@ -275,7 +275,7 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton('✅ Да, сбросить', callback_data='confirm_reset')],
         [InlineKeyboardButton('❌ Отмена', callback_data='cancel_reset')]
     ]
-    
+
     await update.message.reply_text(
         '⚠️ Вы уверены что хотите сбросить все данные профиля?\n'
         'Это действие нельзя отменить!',
@@ -287,7 +287,7 @@ async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /limit - установка собственного лимита калорий"""
     user_id = str(update.effective_user.id)
     profile = get_user_profile(user_id)
-    
+
     # Проверяем аргументы
     if context.args:
         try:
@@ -296,7 +296,7 @@ async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 profile['target_calories'] = new_limit
                 profile['custom_limit'] = True  # Помечаем как пользовательский лимит
                 save_user_profile(user_id, profile)
-                
+
                 await update.message.reply_text(
                     f'✅ Установлен собственный лимит: {new_limit} ккал/день\n\n'
                     f'💡 Чтобы вернуться к автоматическому расчету, используйте /goal'
@@ -315,12 +315,12 @@ async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Показываем текущий лимит и инструкции
         current_limit = profile.get('target_calories', 'не установлен')
         is_custom = profile.get('custom_limit', False)
-        
+
         if is_custom:
             limit_type = "собственный"
         else:
             limit_type = "автоматический"
-        
+
         await update.message.reply_text(
             f'🎯 Текущий лимит калорий: {current_limit} ккал ({limit_type})\n\n'
             f'📝 Для установки собственного лимита:\n'
@@ -336,27 +336,27 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /food - показать дневной журнал еды"""
     user_id = str(update.effective_user.id)
     today = datetime.date.today().isoformat()
-    
+
     try:
         food_log = get_user_food_log(user_id)
         today_foods = food_log.get(today, [])
-        
+
         if not today_foods:
             await update.message.reply_text('📝 Сегодня пока ничего не записано.')
             return
-        
+
         # Создаем детальный обзор
         message_lines = ['📋 **Дневник еды:**\n']
         total_calories = 0
         total_protein = 0
-        
+
         total_fat = 0
         total_carbs = 0
-        
+
         for i, food_entry in enumerate(today_foods, 1):
             if len(food_entry) >= 5:  # Новый формат с полными БЖУ
                 name, calories, protein, fat, carbs = food_entry[0], food_entry[1], food_entry[2], food_entry[3], food_entry[4]
-                
+
                 nutrition_parts = [f'{calories} ккал']
                 if protein:
                     nutrition_parts.append(f'{protein:.1f}г белка')
@@ -367,26 +367,26 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if carbs:
                     nutrition_parts.append(f'{carbs:.1f}г углеводов')
                     total_carbs += carbs
-                
+
                 nutrition_text = ', '.join(nutrition_parts)
-                    
+
             elif len(food_entry) >= 3:  # Старый формат только с белком
                 name, calories, protein = food_entry[0], food_entry[1], food_entry[2]
                 nutrition_text = f'{calories} ккал'
                 if protein:
                     nutrition_text += f', {protein:.1f}г белка'
                     total_protein += protein
-                    
+
             elif len(food_entry) >= 2:  # Старый формат без белка
                 name, calories = food_entry[0], food_entry[1]
                 nutrition_text = f'{calories} ккал'
             else:
                 logging.warning(f"Неправильный формат записи в дневнике: {food_entry}")
                 continue
-            
+
             total_calories += calories
             message_lines.append(f'{i}. {name}: {nutrition_text}')
-        
+
         # Добавляем итоги
         message_lines.append(f'\n**Итого за день:**')
         message_lines.append(f'🔥 Калории: {total_calories} ккал')
@@ -396,10 +396,10 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_lines.append(f'🧈 Жиры: {total_fat:.1f}г')
         if total_carbs > 0:
             message_lines.append(f'🍞 Углеводы: {total_carbs:.1f}г')
-        
+
         message_text = '\n'.join(message_lines)
         await update.message.reply_text(message_text, parse_mode='Markdown')
-        
+
     except Exception as e:
         logging.error(f"Ошибка в food_log_command: {e}")
         await update.message.reply_text(f'❌ Ошибка при получении дневника: {str(e)}')
@@ -408,10 +408,10 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def evening_summary_function(context, user_id):
     """Функция для автоматического вечернего обзора"""
     today = datetime.date.today().isoformat()
-    
+
     food_log = get_user_food_log(user_id)
     today_foods = food_log.get(today, [])
-    
+
     if not today_foods:
         message = '🌙 **Вечерний обзор**\n\n📝 Сегодня ничего не записано в дневник.'
     else:
@@ -419,7 +419,7 @@ async def evening_summary_function(context, user_id):
         message_lines = ['🌙 **Вечерний обзор дня**\n']
         total_calories = 0
         total_protein = 0
-        
+
         for food_entry in today_foods:
             if len(food_entry) >= 3:  # Новый формат с белком
                 name, calories, protein = food_entry[0], food_entry[1], food_entry[2]
@@ -428,26 +428,26 @@ async def evening_summary_function(context, user_id):
                 protein = 0
             else:
                 continue
-                
+
             total_calories += calories
             if protein:
                 total_protein += protein
-        
+
         message_lines.append(f'🔥 Всего калорий: {total_calories} ккал')
         if total_protein > 0:
             message_lines.append(f'💪 Всего белка: {total_protein}г')
-        
+
         message_lines.append(f'\n📝 Записей в дневнике: {len(today_foods)}')
-        
+
         # Добавляем остаток калорий
         profile = get_user_profile(user_id)
         diary = get_user_diary(user_id)
         burned = get_user_burned(user_id)
         left_message = get_calories_left_message(profile, diary, burned, today)
         message_lines.append(f'\n{left_message}')
-        
+
         message = '\n'.join(message_lines)
-    
+
     try:
         await context.bot.send_message(
             chat_id=user_id,
@@ -475,24 +475,24 @@ async def morning_weight_function(context, user_id):
 async def macros_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /macros - анализ БЖУ и рекомендации питания"""
     user_id = str(update.effective_user.id)
-    
+
     try:
         # Получаем полный анализ макронутриентов
         analysis = get_macro_analysis_command(user_id)
-        
+
         # Добавляем кнопки для дополнительных действий
         keyboard = [
             [InlineKeyboardButton('📊 Остаток калорий', callback_data='check_left')],
             [InlineKeyboardButton('📋 Дневник питания', callback_data='show_food_log')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         await update.message.reply_text(
-            analysis, 
+            analysis,
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
-        
+
     except Exception as e:
         logging.error(f"Ошибка в macros_command: {e}")
         await update.message.reply_text(

@@ -18,7 +18,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 import openai_safe
 
 from utils.user_data import (
-    get_user_profile, get_user_diary, save_user_diary, 
+    get_user_profile, get_user_diary, save_user_diary,
     get_user_food_log, save_user_food_log, get_user_burned
 )
 from utils.photo_processor import analyze_food_photo
@@ -29,7 +29,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
     """Обработчик фото еды"""
     user_id = str(update.effective_user.id)
     today = datetime.date.today().isoformat()
-    
+
     try:
         # Получаем файл фото
         file = await update.message.photo[-1].get_file()
@@ -41,7 +41,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Конвертируем в base64
         with open(file_name, 'rb') as f:
             img_b64 = base64.b64encode(f.read()).decode()
-        
+
         # Удаляем временный файл
         os.remove(file_name)
 
@@ -86,7 +86,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 nutrition_parts.append(f'🧈 **Жиры:** {fat:.1f} г')
             if carbs is not None:
                 nutrition_parts.append(f'🍞 **Углеводы:** {carbs:.1f} г')
-            
+
             nutrition_text = '\n'.join(nutrition_parts)
 
             await analyzing_msg.edit_text(
@@ -103,7 +103,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 'fat': fat,
                 'carbs': carbs
             }
-                
+
             context.user_data['pending_photo_dish'] = dish_data
             context.user_data['pending_photo_base64'] = img_b64
 
@@ -125,7 +125,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_photo_confirmation(update, context, user_id, confirm: bool):
     """Обработка подтверждения или уточнения фото"""
     today = datetime.date.today().isoformat()
-    
+
     if confirm:
         # Подтверждение распознанного блюда
         dish_data = context.user_data.get('pending_photo_dish', {})
@@ -163,10 +163,10 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
                 nutrition_parts.append(f'{fat:.1f}г жиров')
             if carbs:
                 nutrition_parts.append(f'{carbs:.1f}г углеводов')
-            
+
             nutrition_text = ', '.join(nutrition_parts)
             response_text = f'✅ Добавлено: {description}, {nutrition_text}. {left_message}'
-            
+
             keyboard = [[InlineKeyboardButton('Сколько осталось калорий?', callback_data='check_left')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
         else:
@@ -176,7 +176,7 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
         # Очищаем временные данные
         context.user_data.pop('pending_photo_dish', None)
         context.user_data.pop('pending_photo_base64', None)
-        
+
         return response_text, reply_markup
 
     else:
@@ -190,14 +190,14 @@ async def handle_photo_clarification(update, context, user_id, clarification_tex
     # Здесь можно добавить логику повторного анализа с учетом уточнения
     # Пока что просто используем текстовое описание
     from .text_handler import handle_food_input
-    
+
     today = datetime.date.today().isoformat()
     diary = get_user_diary(user_id)
     food_log = get_user_food_log(user_id)
     profile = get_user_profile(user_id)
-    
+
     await handle_food_input(update, context, clarification_text, user_id, today, diary, food_log, profile)
-    
+
     # Сбрасываем флаги
     context.user_data['waiting_for_photo_clarification'] = False
     context.user_data.pop('pending_photo_base64', None)
