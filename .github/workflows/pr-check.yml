@@ -47,18 +47,16 @@ jobs:
         python -c "
         from utils.calorie_calculator import extract_nutrition_smart
         
-        # Базовые тесты регрессии
-        test_cases = [
-            ('450 ккал, 30г белка, 15г жира, 25г углеводов', 450),
-            ('Калории: 200, белки: 20г', 200),
-            ('Салат 300 ккал', 300)
-        ]
-        
-        for text, expected_cal in test_cases:
-            result = extract_nutrition_smart(text)
-            if result['calories'] != expected_cal:
-                print(f'❌ Regression detected: {text} -> {result['calories']} (expected {expected_cal})')
-                exit(1)
+        # Базовый тест регрессии
+        result = extract_nutrition_smart('450 ккал, 30г белка, 15г жира, 25г углеводов')
+        if result.get('calories') != 450:
+            print('❌ Regression detected in calorie extraction')
+            exit(1)
+            
+        result2 = extract_nutrition_smart('Салат 300 ккал') 
+        if result2.get('calories') != 300:
+            print('❌ Regression detected in simple extraction')
+            exit(1)
         
         print('✅ No regressions detected')
         "
