@@ -69,6 +69,8 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
             description = result['description']
             kcal = result['calories']
             protein = result.get('protein')
+            fat = result.get('fat')
+            carbs = result.get('carbs')
 
             # Предлагаем подтвердить или уточнить
             keyboard = [
@@ -76,10 +78,16 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 [InlineKeyboardButton('✏️ Уточнить', callback_data='edit_photo')]
             ]
 
-            # Формируем текст с калориями и белком
-            nutrition_text = f'🔥 **Калории:** {kcal} ккал'
+            # Формируем текст с полными БЖУ
+            nutrition_parts = [f'🔥 **Калории:** {kcal} ккал']
             if protein is not None:
-                nutrition_text += f'\n🥩 **Белок:** {protein} г'
+                nutrition_parts.append(f'🥩 **Белок:** {protein:.1f} г')
+            if fat is not None:
+                nutrition_parts.append(f'🧈 **Жиры:** {fat:.1f} г')
+            if carbs is not None:
+                nutrition_parts.append(f'🍞 **Углеводы:** {carbs:.1f} г')
+            
+            nutrition_text = '\n'.join(nutrition_parts)
 
             await analyzing_msg.edit_text(
                 f'📸 **Распознано:**\n{description}\n\n{nutrition_text}\n\nВерно?',
@@ -90,10 +98,11 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
             # Сохраняем данные для подтверждения
             dish_data = {
                 'description': description,
-                'kcal': kcal
+                'kcal': kcal,
+                'protein': protein,
+                'fat': fat,
+                'carbs': carbs
             }
-            if protein is not None:
-                dish_data['protein'] = protein
                 
             context.user_data['pending_photo_dish'] = dish_data
             context.user_data['pending_photo_base64'] = img_b64
@@ -123,6 +132,8 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
         description = dish_data.get('description', 'Блюдо с фото')
         kcal = dish_data.get('kcal', 0)
         protein = dish_data.get('protein')
+        fat = dish_data.get('fat')
+        carbs = dish_data.get('carbs')
 
         if kcal:
             # Сохраняем данные
@@ -135,10 +146,8 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
 
             if today not in food_log:
                 food_log[today] = []
-            # Добавляем запись с безопасной обработкой protein
-            log_entry = [description, kcal]
-            if protein is not None:
-                log_entry.append(protein)
+            # Добавляем запись с полными БЖУ
+            log_entry = [description, kcal, protein, fat, carbs]
             food_log[today].append(log_entry)
             save_user_food_log(user_id, food_log)
 
@@ -146,7 +155,17 @@ async def handle_photo_confirmation(update, context, user_id, confirm: bool):
             burned = get_user_burned(user_id)
             left_message = get_calories_left_message(profile, diary, burned, today)
 
-            response_text = f'✅ Добавлено: {description}, {kcal} ккал. {left_message}'
+            # Формируем сообщение с полными БЖУ
+            nutrition_parts = [f'{kcal} ккал']
+            if protein:
+                nutrition_parts.append(f'{protein:.1f}г белка')
+            if fat:
+                nutrition_parts.append(f'{fat:.1f}г жиров')
+            if carbs:
+                nutrition_parts.append(f'{carbs:.1f}г углеводов')
+            
+            nutrition_text = ', '.join(nutrition_parts)
+            response_text = f'✅ Добавлено: {description}, {nutrition_text}. {left_message}'
             
             keyboard = [[InlineKeyboardButton('Сколько осталось калорий?', callback_data='check_left')]]
             reply_markup = InlineKeyboardMarkup(keyboard)

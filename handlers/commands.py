@@ -20,7 +20,7 @@ from utils.user_data import (
     get_user_profile, save_user_profile, get_user_diary, save_user_diary, 
     get_user_burned, get_user_food_log, save_user_food_log, save_user_burned
 )
-from utils.calorie_calculator import calculate_bmr_tdee, get_calories_left_message
+from utils.calorie_calculator import calculate_bmr_tdee, get_calories_left_message, get_macro_analysis_command
 from config import VALIDATION_LIMITS
 
 
@@ -181,13 +181,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /burn - Записать потраченные калории
 /left - Узнать остаток калорий на день
 /food - Показать дневник еды за день
-/clear\_today - Очистить записи за сегодня
+/macros - Анализ БЖУ и рекомендации питания
+/clear_today - Очистить записи за сегодня
 /reset - Сбросить профиль (начать заново)
 
 🍽️ *Как добавлять еду:*
-• Отправьте фото блюда для автоматического анализа
+• Отправьте фото блюда для автоматического анализа БЖУ
 • Напишите текстом что едите, например: "творог с арбузом"
-• Бот автоматически рассчитает калории
+• Бот автоматически рассчитает калории, белки, жиры и углеводы
+
+🧠 *Анализ питания:*
+• `/macros` - получите персональные рекомендации по БЖУ
+• Бот подскажет, каких нутриентов не хватает
+• Рекомендации продуктов для балансировки питания
 
 🎯 *Система целей:*
 🔥 Похудение - дефицит 20% от нормы
@@ -344,29 +350,52 @@ async def food_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_calories = 0
         total_protein = 0
         
+        total_fat = 0
+        total_carbs = 0
+        
         for i, food_entry in enumerate(today_foods, 1):
-            if len(food_entry) >= 3:  # Новый формат с белком
+            if len(food_entry) >= 5:  # Новый формат с полными БЖУ
+                name, calories, protein, fat, carbs = food_entry[0], food_entry[1], food_entry[2], food_entry[3], food_entry[4]
+                
+                nutrition_parts = [f'{calories} ккал']
+                if protein:
+                    nutrition_parts.append(f'{protein:.1f}г белка')
+                    total_protein += protein
+                if fat:
+                    nutrition_parts.append(f'{fat:.1f}г жиров')
+                    total_fat += fat
+                if carbs:
+                    nutrition_parts.append(f'{carbs:.1f}г углеводов')
+                    total_carbs += carbs
+                
+                nutrition_text = ', '.join(nutrition_parts)
+                    
+            elif len(food_entry) >= 3:  # Старый формат только с белком
                 name, calories, protein = food_entry[0], food_entry[1], food_entry[2]
-                protein_text = f', {protein}г белка' if protein else ''
+                nutrition_text = f'{calories} ккал'
+                if protein:
+                    nutrition_text += f', {protein:.1f}г белка'
+                    total_protein += protein
+                    
             elif len(food_entry) >= 2:  # Старый формат без белка
                 name, calories = food_entry[0], food_entry[1]
-                protein = 0
-                protein_text = ''
+                nutrition_text = f'{calories} ккал'
             else:
                 logging.warning(f"Неправильный формат записи в дневнике: {food_entry}")
                 continue
             
             total_calories += calories
-            if protein:
-                total_protein += protein
-            
-            message_lines.append(f'{i}. {name}: {calories} ккал{protein_text}')
+            message_lines.append(f'{i}. {name}: {nutrition_text}')
         
         # Добавляем итоги
         message_lines.append(f'\n**Итого за день:**')
         message_lines.append(f'🔥 Калории: {total_calories} ккал')
         if total_protein > 0:
-            message_lines.append(f'💪 Белок: {total_protein}г')
+            message_lines.append(f'💪 Белок: {total_protein:.1f}г')
+        if total_fat > 0:
+            message_lines.append(f'🧈 Жиры: {total_fat:.1f}г')
+        if total_carbs > 0:
+            message_lines.append(f'🍞 Углеводы: {total_carbs:.1f}г')
         
         message_text = '\n'.join(message_lines)
         await update.message.reply_text(message_text, parse_mode='Markdown')
@@ -441,3 +470,32 @@ async def morning_weight_function(context, user_id):
         context.user_data['step'] = 'daily_weight'
     except Exception as e:
         logging.error(f"Failed to send morning weight request to {user_id}: {e}")
+
+
+async def macros_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /macros - анализ БЖУ и рекомендации питания"""
+    user_id = str(update.effective_user.id)
+    
+    try:
+        # Получаем полный анализ макронутриентов
+        analysis = get_macro_analysis_command(user_id)
+        
+        # Добавляем кнопки для дополнительных действий
+        keyboard = [
+            [InlineKeyboardButton('📊 Остаток калорий', callback_data='check_left')],
+            [InlineKeyboardButton('📋 Дневник питания', callback_data='show_food_log')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            analysis, 
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        
+    except Exception as e:
+        logging.error(f"Ошибка в macros_command: {e}")
+        await update.message.reply_text(
+            f'❌ Ошибка при анализе питания: {str(e)}\n\n'
+            f'Убедитесь, что у вас заполнен профиль (/start) и есть записи в дневнике.'
+        )

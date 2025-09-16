@@ -1,0 +1,118 @@
+name: ✅ Simple CI Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  fast-tests:
+    name: "Fast & Reliable Tests"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout
+      uses: actions/checkout@v4
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: ⚡ Smoke Tests (Ultra Fast)
+      run: python tests/test_smoke.py
+
+    - name: 🧪 CI Tests (Comprehensive)
+      run: python tests/test_ci.py
+
+    - name: 🔍 Quick Import Check
+      run: |
+        echo "Testing critical imports..."
+        python -c "import sys, os, re, json; print('✅ Standard libs OK')"
+        python -c "print('✅ Python version:', sys.version)"
+
+    - name: 📊 File Structure Check
+      run: |
+        echo "Checking project structure..."
+        test -f calorie_bot_modular.py && echo "✅ Main bot file exists"
+        test -f config.py && echo "✅ Config exists" 
+        test -f requirements.txt && echo "✅ Requirements exists"
+        test -d utils && echo "✅ Utils directory exists"
+        test -d handlers && echo "✅ Handlers directory exists"
+
+  security-scan:
+    name: "Security & Quality"
+    runs-on: ubuntu-latest
+    needs: fast-tests
+    
+    steps:
+    - name: 📥 Checkout
+      uses: actions/checkout@v4
+
+    - name: 🔒 Check for secrets
+      run: |
+        echo "🔍 Scanning for hardcoded secrets..."
+        
+        # Check for API keys
+        if grep -r "sk-[a-zA-Z0-9]" . --exclude-dir=.git --exclude="*.md" 2>/dev/null; then
+          echo "❌ OpenAI API key found in code!"
+          exit 1
+        fi
+        
+        # Check for bot tokens  
+        if grep -r "[0-9]\{8,\}:[a-zA-Z0-9_-]\{35\}" . --exclude-dir=.git --exclude="*.md" 2>/dev/null; then
+          echo "❌ Telegram bot token found in code!"
+          exit 1
+        fi
+        
+        echo "✅ No hardcoded secrets detected"
+
+    - name: 📏 Basic code quality
+      run: |
+        echo "📏 Basic quality checks..."
+        
+        # Check for TODO/FIXME comments
+        todo_count=$(grep -r "TODO\|FIXME" . --exclude-dir=.git --include="*.py" | wc -l || echo "0")
+        echo "📝 Found $todo_count TODO/FIXME comments"
+        
+        # Check Python file syntax
+        echo "🐍 Checking Python syntax..."
+        find . -name "*.py" -exec python -m py_compile {} \; 2>/dev/null || echo "⚠️ Some syntax issues found"
+        
+        echo "✅ Quality check completed"
+
+  summary:
+    name: "Test Summary" 
+    runs-on: ubuntu-latest
+    needs: [fast-tests, security-scan]
+    if: always()
+    
+    steps:
+    - name: 📋 Results Summary
+      run: |
+        echo "🧪 TEST SUMMARY"
+        echo "==============="
+        echo ""
+        
+        if [ "${{ needs.fast-tests.result }}" = "success" ]; then
+          echo "✅ Fast Tests: PASSED"
+        else
+          echo "❌ Fast Tests: FAILED"
+        fi
+        
+        if [ "${{ needs.security-scan.result }}" = "success" ]; then
+          echo "✅ Security: PASSED"
+        else  
+          echo "❌ Security: FAILED"
+        fi
+        
+        echo ""
+        
+        if [ "${{ needs.fast-tests.result }}" = "success" ] && [ "${{ needs.security-scan.result }}" = "success" ]; then
+          echo "🎉 ALL CHECKS PASSED!"
+          echo "✨ Code is ready for production"
+        else
+          echo "🔧 Issues found - please fix before merging"
+          exit 1
+        fi

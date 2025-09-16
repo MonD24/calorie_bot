@@ -250,7 +250,8 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
             
             if today not in food_log:
                 food_log[today] = []
-            food_log[today].append([food_name, manual_calories, None])  # Белок не указан
+            # При ручном вводе БЖУ неизвестны
+            food_log[today].append([food_name, manual_calories, None, None, None])
             save_user_food_log(user_id, food_log)
 
             # Рассчитываем остаток калорий
@@ -299,6 +300,8 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
         # Валидируем результат
         kcal = validate_calorie_result(text, nutrition['calories'])
         protein = nutrition.get('protein')
+        fat = nutrition.get('fat')
+        carbs = nutrition.get('carbs')
 
         # Сохраняем данные
         diary[today] += kcal
@@ -306,7 +309,8 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
         
         if today not in food_log:
             food_log[today] = []
-        food_log[today].append([text, kcal, protein])
+        # Сохраняем в формате: [название, калории, белки, жиры, углеводы]
+        food_log[today].append([text, kcal, protein, fat, carbs])
         save_user_food_log(user_id, food_log)
 
         # Рассчитываем остаток калорий
@@ -314,9 +318,15 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
         left_message = get_calories_left_message(profile, diary, burned, today)
 
         # Формируем сообщение с информацией о питании
-        nutrition_text = f'{kcal} ккал'
+        nutrition_parts = [f'{kcal} ккал']
         if protein:
-            nutrition_text += f', {protein}г белка'
+            nutrition_parts.append(f'{protein:.1f}г белка')
+        if fat:
+            nutrition_parts.append(f'{fat:.1f}г жиров')
+        if carbs:
+            nutrition_parts.append(f'{carbs:.1f}г углеводов')
+        
+        nutrition_text = ', '.join(nutrition_parts)
 
         await update.message.reply_text(
             f'Блюдо: {text}, {nutrition_text}. {left_message}.',
@@ -402,6 +412,8 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
 
         kcal = validate_calorie_result(final_description, nutrition['calories'])
         protein = nutrition.get('protein')
+        fat = nutrition.get('fat')
+        carbs = nutrition.get('carbs')
 
         # Сохраняем результат
         diary[today] += kcal
@@ -409,7 +421,8 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
         
         if today not in food_log:
             food_log[today] = []
-        food_log[today].append([final_description, kcal, protein])
+        # Сохраняем в формате: [название, калории, белки, жиры, углеводы]
+        food_log[today].append([final_description, kcal, protein, fat, carbs])
         save_user_food_log(user_id, food_log)
 
         # Рассчитываем остаток калорий
@@ -417,9 +430,15 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
         left_message = get_calories_left_message(profile, diary, burned, today)
 
         # Формируем сообщение с информацией о питании
-        nutrition_text = f'{kcal} ккал'
+        nutrition_parts = [f'{kcal} ккал']
         if protein:
-            nutrition_text += f', {protein}г белка'
+            nutrition_parts.append(f'{protein:.1f}г белка')
+        if fat:
+            nutrition_parts.append(f'{fat:.1f}г жиров')
+        if carbs:
+            nutrition_parts.append(f'{carbs:.1f}г углеводов')
+        
+        nutrition_text = ', '.join(nutrition_parts)
 
         await update.message.reply_text(
             f'Блюдо: {final_description}, {nutrition_text}. {left_message}.',

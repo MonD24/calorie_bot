@@ -5,6 +5,7 @@
 import re
 import logging
 from typing import Optional, Dict, Any
+import datetime
 
 # Исправляем импорты для работы из main.py
 import sys
@@ -16,6 +17,7 @@ import openai_safe
 
 from data.calorie_database import CALORIE_DATABASE, LOW_CAL_KEYWORDS, HIGH_CAL_KEYWORDS
 from config import VALIDATION_LIMITS, ACTIVITY_MULTIPLIER, GOAL_MULTIPLIERS, OPENAI_API_KEY
+from .user_data import get_user_profile, get_user_food_log
 
 # Настройка OpenAI API - только новая версия (1.0+)
 try:
@@ -73,7 +75,7 @@ def create_calorie_prompt(description: str, is_clarification: bool = False) -> s
 
 РАСПОЗНАВАНИЕ ЖАРЕНЫХ ИЗДЕЛИЙ:
 - Если видишь золотистое полукруглое жареное изделие - это ЧЕБУРЕК (120г = 300 ккал)
-- Сразу давай точный расчет: "Это чебурек. 300 ккал, 10г белка"
+- Сразу давай точный расчет: "Это чебурек. 300 ккал, 10г белка, 15г жиров, 25г углеводов"
 - НЕ спрашивай про начинку и вес - используй стандартные значения
 
 ОСОБОЕ ВНИМАНИЕ К ВЫСОКОКАЛОРИЙНЫМ ПРОДУКТАМ:
@@ -97,10 +99,10 @@ def create_calorie_prompt(description: str, is_clarification: bool = False) -> s
 """
     
     if is_clarification:
-        base_prompt += "ВАЖНО: Информации достаточно для расчета. Ответь в формате: X ккал, Y г белка"
+        base_prompt += "ВАЖНО: Информации достаточно для расчета. Ответь в формате: X ккал, Y г белка, Z г жиров, W г углеводов"
     else:
         base_prompt += """
-Если информации достаточно для точного расчета - ответь в формате: X ккал, Y г белка
+Если информации достаточно для точного расчета - ответь в формате: X ккал, Y г белка, Z г жиров, W г углеводов
 Если нужны критически важные уточнения (размер порции, способ приготовления), задай ОДИН конкретный вопрос и добавь "ВОПРОС:".
 """
     
@@ -159,24 +161,28 @@ def extract_calories_smart(response_text: str) -> Optional[int]:
     if response_text.replace('.', '').replace(',', '').isdigit():
         return int(float(response_text.replace(',', '.')))
     
-    # Ищем число после ключевых слов
+    # Ищем число после ключевых слов (в порядке приоритета)
     patterns = [
-        r'итого:?\s*(\d+)',
-        r'всего:?\s*(\d+)', 
-        r'общая\s+калорийность:?\s*(\d+)', 
-        r'калорийность:?\s*(\d+)', 
-        r'(\d+)\s*ккал',
-        r'=\s*(\d+)',
-        r'составляет?\s*(\d+)',
-        r'примерно\s*(\d+)',
-        r'около\s*(\d+)'
+        r'итого:?\s*(\d+(?:[.,]\d+)?)\s*ккал',  # итого: 450 ккал
+        r'всего\s+(\d+(?:[.,]\d+)?)\s*ккал',  # всего 450 ккал
+        r'итого:?\s*(\d+(?:[.,]\d+)?)',  # итого: 450
+        r'всего:?\s*(\d+(?:[.,]\d+)?)',  # всего: 450
+        r'общая\s+калорийность:?\s*(\d+(?:[.,]\d+)?)', 
+        r'калорийность:?\s*(\d+(?:[.,]\d+)?)', 
+        r'калории:?\s*(\d+(?:[.,]\d+)?)',  # калории: 450
+        r'(\d+(?:[.,]\d+)?)\s*ккал',  # 450 ккал
+        r'(\d+(?:[.,]\d+)?)\s*калори[йяе]',  # 450 калорий
+        r'=\s*(\d+(?:[.,]\d+)?)',
+        r'составляет?\s*(\d+(?:[.,]\d+)?)',
+        r'примерно\s*(\d+(?:[.,]\d+)?)',
+        r'около\s*(\d+(?:[.,]\d+)?)'
     ]
     
     for pattern in patterns:
         matches = re.findall(pattern, response_text, re.IGNORECASE)
         if matches:
             # Берем последнее найденное значение (обычно итоговое)
-            result = int(matches[-1])
+            result = int(float(matches[-1].replace(',', '.')))
             logging.info(f"Found calories using pattern '{pattern}': {result}")
             return result
     
@@ -201,8 +207,12 @@ def extract_protein_smart(response_text: str) -> Optional[float]:
     patterns = [
         r'(\d+(?:[.,]\d+)?)\s*г\s*белка',
         r'белок[а-я]*:?\s*(\d+(?:[.,]\d+)?)',
+        r'белки:?\s*(\d+(?:[.,]\d+)?)',  # белки: 30
         r'(\d+(?:[.,]\d+)?)\s*г\s*белк',
         r'белк[а-я]*\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*грамм\s*белка',  # 25 грамм белка
+        r'б:?\s*(\d+(?:[.,]\d+)?)',  # б: 35г
+        r'(\d+(?:[.,]\d+)?)\s*г?\s*б\b',  # 35г б или 35 б
         r'protein:?\s*(\d+(?:[.,]\d+)?)',
         r'(\d+(?:[.,]\d+)?)\s*g\s*protein'
     ]
@@ -219,14 +229,97 @@ def extract_protein_smart(response_text: str) -> Optional[float]:
     return None
 
 
+def extract_fat_smart(response_text: str) -> Optional[float]:
+    """Умное извлечение жиров из ответа GPT"""
+    if not response_text:
+        return None
+    
+    # Ищем жиры в различных форматах
+    patterns = [
+        r'(\d+(?:[.,]\d+)?)\s*г\s*жиров?',
+        r'жир[а-я]*:?\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*г\s*жир',
+        r'жир[а-я]*\s*(\d+(?:[.,]\d+)?)',
+        r'fat:?\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*g\s*fat',
+        r'ж:\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*ж\s',
+        r'липид[а-я]*:?\s*(\d+(?:[.,]\d+)?)'
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, response_text, re.IGNORECASE)
+        if matches:
+            # Берем последнее найденное значение
+            result = float(matches[-1].replace(',', '.'))
+            logging.info(f"Found fat using pattern '{pattern}': {result}")
+            return result
+    
+    logging.warning(f"Could not extract fat from: {response_text}")
+    return None
+
+
+def extract_carbs_smart(response_text: str) -> Optional[float]:
+    """Умное извлечение углеводов из ответа GPT"""
+    if not response_text:
+        return None
+    
+    # Ищем углеводы в различных форматах
+    patterns = [
+        r'(\d+(?:[.,]\d+)?)\s*г\s*углеводов?',
+        r'углевод[а-я]*:?\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*г\s*углевод',
+        r'углевод[а-я]*\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*грамм\s*углеводов?',  # 20 грамм углеводов
+        r'carbs?:?\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*g\s*carbs?',
+        r'carbohydrates?:?\s*(\d+(?:[.,]\d+)?)',
+        r'(\d+(?:[.,]\d+)?)\s*g\s*carbohydrates?',
+        r'у:?\s*(\d+(?:[.,]\d+)?)',  # у: 45г или У 55 г
+        r'(\d+(?:[.,]\d+)?)\s*г?\s*у\b',  # 45г у или 45 у
+        r'сахар[а-я]*:?\s*(\d+(?:[.,]\d+)?)'
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, response_text, re.IGNORECASE)
+        if matches:
+            # Берем последнее найденное значение
+            result = float(matches[-1].replace(',', '.'))
+            logging.info(f"Found carbs using pattern '{pattern}': {result}")
+            return result
+    
+    logging.warning(f"Could not extract carbs from: {response_text}")
+    return None
+
+
 def extract_nutrition_smart(response_text: str) -> Dict[str, Optional[float]]:
-    """Извлекает калории и белок из ответа GPT"""
+    """Извлекает полные БЖУ и калории из ответа GPT"""
+    # Сначала пытаемся найти полный формат в одной строке
+    full_pattern = r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов'
+    full_match = re.search(full_pattern, response_text, re.IGNORECASE | re.DOTALL)
+    
+    if full_match:
+        logging.info(f"Найден полный формат БЖУ: {full_match.groups()}")
+        return {
+            'calories': float(full_match.group(1).replace(',', '.')),
+            'protein': float(full_match.group(2).replace(',', '.')),
+            'fat': float(full_match.group(3).replace(',', '.')),
+            'carbs': float(full_match.group(4).replace(',', '.'))
+        }
+    
+    # Если не найден полный формат, извлекаем по отдельности
     calories = extract_calories_smart(response_text)
     protein = extract_protein_smart(response_text)
+    fat = extract_fat_smart(response_text)
+    carbs = extract_carbs_smart(response_text)
+    
+    logging.info(f"Извлечение по отдельности: калории={calories}, белки={protein}, жиры={fat}, углеводы={carbs}")
     
     return {
         'calories': calories,
-        'protein': protein
+        'protein': protein,
+        'fat': fat,
+        'carbs': carbs
     }
 
 
@@ -325,3 +418,249 @@ def get_calories_left_message(profile: Dict[str, Any], diary: Dict[str, int],
             left_message = f"Превышение дневной нормы: {abs(left)} ккал"
     
     return left_message
+
+
+def calculate_macro_targets(weight: float, goal: str = 'deficit') -> Dict[str, float]:
+    """
+    Рассчитывает целевые значения БЖУ на основе веса и цели
+    
+    Рекомендации:
+    - Белок: 1.6-2.2г на кг веса (в зависимости от цели)
+    - Жиры: 0.8-1.2г на кг веса
+    - Углеводы: остальные калории
+    """
+    
+    if goal == 'deficit':
+        # При похудении больше белка для сохранения мышц
+        protein_per_kg = 2.0
+        fat_per_kg = 0.8
+    elif goal == 'surplus':
+        # При наборе массы чуть меньше белка, больше углеводов
+        protein_per_kg = 1.8
+        fat_per_kg = 1.0
+    else:  # maintain
+        # При поддержании умеренные значения
+        protein_per_kg = 1.8
+        fat_per_kg = 0.9
+    
+    target_protein = weight * protein_per_kg
+    target_fat = weight * fat_per_kg
+    
+    return {
+        'protein': target_protein,
+        'fat': target_fat,
+        'protein_per_kg': protein_per_kg,
+        'fat_per_kg': fat_per_kg
+    }
+
+
+def analyze_daily_nutrition(user_id: str, date: str = None) -> Dict[str, Any]:
+    """
+    Анализирует питание пользователя за день и возвращает статистику БЖУ
+    """
+    if not date:
+        date = datetime.date.today().isoformat()
+    
+    food_log = get_user_food_log(user_id)
+    daily_foods = food_log.get(date, [])
+    
+    if not daily_foods:
+        return {
+            'total_calories': 0,
+            'total_protein': 0,
+            'total_fat': 0,
+            'total_carbs': 0,
+            'foods_count': 0,
+            'has_data': False
+        }
+    
+    total_calories = 0
+    total_protein = 0
+    total_fat = 0
+    total_carbs = 0
+    
+    for food_entry in daily_foods:
+        if len(food_entry) >= 2:
+            calories = food_entry[1]
+            total_calories += calories
+            
+            # Если есть информация о белке
+            if len(food_entry) >= 3 and food_entry[2] is not None:
+                protein = food_entry[2]
+                total_protein += protein
+            
+            # Если есть информация о жирах
+            if len(food_entry) >= 4 and food_entry[3] is not None:
+                fat = food_entry[3]
+                total_fat += fat
+            
+            # Если есть информация об углеводах
+            if len(food_entry) >= 5 and food_entry[4] is not None:
+                carbs = food_entry[4]
+                total_carbs += carbs
+    
+    return {
+        'total_calories': total_calories,
+        'total_protein': total_protein,
+        'total_fat': total_fat,
+        'total_carbs': total_carbs,
+        'foods_count': len(daily_foods),
+        'has_data': True
+    }
+
+
+def get_nutrition_recommendations(user_id: str, date: str = None) -> str:
+    """
+    Анализирует съеденное за день и дает рекомендации по питанию
+    """
+    if not date:
+        date = datetime.date.today().isoformat()
+    
+    # Получаем профиль пользователя
+    profile = get_user_profile(user_id)
+    if not profile or 'weight' not in profile:
+        return "❌ Для получения рекомендаций сначала заполните профиль командой /start"
+    
+    weight = profile['weight']
+    goal = profile.get('goal', 'deficit')
+    target_calories = profile.get('target_calories', 2000)
+    
+    # Получаем целевые значения БЖУ
+    macro_targets = calculate_macro_targets(weight, goal)
+    
+    # Анализируем съеденное
+    nutrition = analyze_daily_nutrition(user_id, date)
+    
+    if not nutrition['has_data']:
+        return "📝 Сегодня еще нет записей о еде. Добавьте что-нибудь в дневник!"
+    
+    # Формируем рекомендации
+    recommendations = []
+    recommendations.append("🧠 **Анализ питания на сегодня:**\n")
+    
+    # Статистика по белкам
+    protein_deficit = macro_targets['protein'] - nutrition['total_protein']
+    protein_percent = (nutrition['total_protein'] / macro_targets['protein']) * 100 if macro_targets['protein'] > 0 else 0
+    
+    recommendations.append(f"🥩 **Белок:** {nutrition['total_protein']:.1f}г / {macro_targets['protein']:.1f}г ({protein_percent:.0f}%)")
+    
+    if protein_deficit > 20:
+        recommendations.append(f"⚠️ Недостаток белка: {protein_deficit:.1f}г")
+        recommendations.append("💡 *Рекомендации:* курица, творог, рыба, яйца, протеиновые коктейли")
+    elif protein_deficit > 0:
+        recommendations.append(f"📈 Можно добавить еще: {protein_deficit:.1f}г белка")
+    else:
+        recommendations.append("✅ Норма белка выполнена!")
+    
+    # Анализ по времени дня
+    current_hour = datetime.datetime.now().hour
+    
+    if current_hour < 12:  # Утро
+        recommendations.append(f"\n🌅 **Утренние рекомендации:**")
+        if protein_deficit > 10:
+            recommendations.append("• Добавьте белковый завтрак (яйца, творог, овсянка с протеином)")
+        recommendations.append("• Не забудьте про сложные углеводы для энергии на день")
+        
+    elif current_hour < 18:  # День
+        recommendations.append(f"\n☀️ **Дневные рекомендации:**")
+        if protein_deficit > 15:
+            recommendations.append("• Обед с хорошей порцией белка (мясо, рыба, бобовые)")
+        recommendations.append("• Время для основного приема пищи")
+        
+    else:  # Вечер
+        recommendations.append(f"\n🌙 **Вечерние рекомендации:**")
+        if protein_deficit > 20:
+            recommendations.append("• Легкий белковый ужин (рыба, творог, курица)")
+            recommendations.append("• Избегайте тяжелых углеводов перед сном")
+        elif protein_deficit > 0:
+            recommendations.append("• Можно добавить легкий белковый перекус")
+        else:
+            recommendations.append("• Норма белка выполнена! Легкий ужин с овощами")
+    
+    # Общие рекомендации по балансу
+    recommendations.append(f"\n⚖️ **Баланс питания:**")
+    
+    # Анализируем разнообразие (примерно)
+    if nutrition['foods_count'] < 3:
+        recommendations.append("📊 Мало разнообразия в питании - добавьте овощи и фрукты")
+    
+    # Рекомендации по калориям
+    calories_left = target_calories - nutrition['total_calories']
+    if calories_left > 300:
+        recommendations.append(f"🔥 Осталось {calories_left} ккал - можно добавить полноценный прием пищи")
+    elif calories_left > 100:
+        recommendations.append(f"🔥 Осталось {calories_left} ккал - легкий перекус")
+    elif calories_left > 0:
+        recommendations.append(f"🔥 Осталось {calories_left} ккал - почти достигли цели")
+    else:
+        recommendations.append("🎯 Дневная норма калорий выполнена!")
+    
+    return '\n'.join(recommendations)
+
+
+def get_food_suggestions_by_macros(protein_needed: float, calories_budget: int) -> list:
+    """
+    Предлагает конкретные продукты на основе недостающих макронутриентов
+    """
+    suggestions = []
+    
+    if protein_needed > 30:
+        suggestions.extend([
+            "🍗 Куриная грудка (150г) = 31г белка, 165 ккал",
+            "🐟 Лосось (150г) = 37г белка, 231 ккал",
+            "🥩 Говядина постная (100г) = 26г белка, 158 ккал"
+        ])
+    elif protein_needed > 15:
+        suggestions.extend([
+            "🥚 2 яйца = 12г белка, 140 ккал", 
+            "🧀 Творог 5% (100г) = 17г белка, 121 ккал",
+            "🥛 Греческий йогурт (150г) = 15г белка, 100 ккал"
+        ])
+    elif protein_needed > 5:
+        suggestions.extend([
+            "🥜 Горсть миндаля = 6г белка, 160 ккал",
+            "🍫 Протеиновый батончик = 8-12г белка, 120-180 ккал"
+        ])
+    
+    # Ограничиваем по калориям
+    filtered_suggestions = []
+    for suggestion in suggestions:
+        # Извлекаем калории из строки (примерно)
+        try:
+            calories_in_suggestion = int(suggestion.split('ккал')[0].split()[-1])
+            if calories_in_suggestion <= calories_budget:
+                filtered_suggestions.append(suggestion)
+        except:
+            filtered_suggestions.append(suggestion)  # Если не смогли распарсить, добавляем
+    
+    return filtered_suggestions[:3]  # Возвращаем максимум 3 предложения
+
+
+def get_macro_analysis_command(user_id: str) -> str:
+    """
+    Полный анализ макронутриентов для команды /macros
+    """
+    today = datetime.date.today().isoformat()
+    
+    # Базовый анализ
+    recommendations = get_nutrition_recommendations(user_id, today)
+    
+    # Получаем профиль для дополнительной информации
+    profile = get_user_profile(user_id)
+    nutrition = analyze_daily_nutrition(user_id, today)
+    
+    if profile and 'weight' in profile and nutrition['has_data']:
+        weight = profile['weight']
+        goal = profile.get('goal', 'deficit')
+        target_calories = profile.get('target_calories', 2000)
+        
+        macro_targets = calculate_macro_targets(weight, goal)
+        protein_needed = max(0, macro_targets['protein'] - nutrition['total_protein'])
+        calories_left = max(0, target_calories - nutrition['total_calories'])
+        
+        if protein_needed > 5 and calories_left > 50:
+            suggestions = get_food_suggestions_by_macros(protein_needed, calories_left)
+            if suggestions:
+                recommendations += f"\n\n💡 **Рекомендуемые продукты:**\n" + '\n'.join(f"• {s}" for s in suggestions)
+    
+    return recommendations

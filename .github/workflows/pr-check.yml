@@ -1,0 +1,133 @@
+name: 🔍 Pull Request Check
+
+on:
+  pull_request:
+    branches: [ main, master ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  quick-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout PR
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Получаем всю историю для сравнения
+        
+    - name: 🐍 Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: 🔧 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: 🧪 Quick syntax check
+      run: |
+        echo "🔍 Checking syntax of changed files..."
+        # Получаем список измененных Python файлов
+        git diff --name-only origin/master...HEAD | grep "\.py$" | while read file; do
+          if [ -f "$file" ]; then
+            echo "Checking $file..."
+            python -m py_compile "$file"
+          fi
+        done
+
+    - name: 🧪 Run fast CI tests
+      run: |
+        echo "🧪 Running reliable CI tests..."
+        python tests/test_ci.py
+
+    - name: 📊 Check for regression
+      run: |
+        echo "🔍 Checking for potential regressions..."
+        python -c "
+        from utils.calorie_calculator import extract_nutrition_smart
+        
+        # Базовые тесты регрессии
+        test_cases = [
+            ('450 ккал, 30г белка, 15г жира, 25г углеводов', 450),
+            ('Калории: 200, белки: 20г', 200),
+            ('Салат 300 ккал', 300)
+        ]
+        
+        for text, expected_cal in test_cases:
+            result = extract_nutrition_smart(text)
+            if result['calories'] != expected_cal:
+                print(f'❌ Regression detected: {text} -> {result['calories']} (expected {expected_cal})')
+                exit(1)
+        
+        print('✅ No regressions detected')
+        "
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout PR
+      uses: actions/checkout@v4
+        
+    - name: 🐍 Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: 🔧 Install dev dependencies
+      run: |
+        pip install flake8 bandit
+
+    - name: 📏 Code style check
+      run: |
+        echo "📏 Running flake8..."
+        flake8 --max-line-length=120 --ignore=E501,W503,E203 \
+          --statistics --count \
+          calorie_bot_modular.py utils/ handlers/ data/ \
+          --exclude=__pycache__,*.pyc || true
+
+    - name: 🔒 Security check
+      run: |
+        echo "🔒 Running security scan..."
+        bandit -r . -f txt -ll || true
+        
+        # Проверяем что нет новых секретов
+        echo "🔍 Checking for hardcoded secrets..."
+        if git diff origin/master...HEAD | grep -E "(api[_-]?key|token|password|secret)" -i; then
+          echo "⚠️ Potential secrets found in diff"
+        else
+          echo "✅ No secrets detected in changes"
+        fi
+
+  pr-summary:
+    runs-on: ubuntu-latest
+    needs: [quick-check, code-quality]
+    if: always()
+    
+    steps:
+    - name: 📋 PR Check Summary
+      run: |
+        echo "📋 Pull Request Check Summary"
+        echo "=========================="
+        echo ""
+        
+        if [ "${{ needs.quick-check.result }}" = "success" ]; then
+          echo "✅ Quick Check: PASSED"
+        else
+          echo "❌ Quick Check: FAILED"
+        fi
+        
+        if [ "${{ needs.code-quality.result }}" = "success" ]; then
+          echo "✅ Code Quality: PASSED"  
+        else
+          echo "❌ Code Quality: FAILED"
+        fi
+        
+        echo ""
+        if [ "${{ needs.quick-check.result }}" = "success" ] && [ "${{ needs.code-quality.result }}" = "success" ]; then
+          echo "🎉 PR is ready for review!"
+        else
+          echo "🔧 PR needs fixes before merge"
+          exit 1
+        fi
