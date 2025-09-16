@@ -29,7 +29,7 @@ jobs:
       run: |
         echo "🔍 Checking syntax of changed files..."
         # Получаем список измененных Python файлов
-        git diff --name-only origin/master...HEAD | grep "\.py$" | while read file; do
+        git diff --name-only origin/main...HEAD | grep "\.py$" | while read file; do
           if [ -f "$file" ]; then
             echo "Checking $file..."
             python -m py_compile "$file"
@@ -94,7 +94,7 @@ jobs:
         
         # Проверяем что нет новых секретов
         echo "🔍 Checking for hardcoded secrets..."
-        if git diff origin/master...HEAD | grep -E "(api[_-]?key|token|password|secret)" -i; then
+        if git diff origin/main...HEAD | grep -E "(api[_-]?key|token|password|secret)" -i; then
           echo "⚠️ Potential secrets found in diff"
         else
           echo "✅ No secrets detected in changes"

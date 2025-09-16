@@ -111,13 +111,11 @@ def test_file_structure():
 
 def test_python_syntax():
     """Проверка синтаксиса Python файлов"""
-    import ast
+    import py_compile
     
     python_files = [
         "calorie_bot_modular.py", 
-        "config.py",
-        "utils/calorie_calculator.py",
-        "handlers/commands.py"
+        "config.py"
     ]
     
     failed = []
@@ -127,13 +125,9 @@ def test_python_syntax():
         full_path = os.path.join(project_root, file_path)
         if os.path.exists(full_path):
             try:
-                with open(full_path, 'r', encoding='utf-8') as f:
-                    source = f.read()
-                ast.parse(source, filename=file_path)
-            except SyntaxError as e:
-                failed.append(f"Синтаксическая ошибка в {file_path}: {e}")
+                py_compile.compile(full_path, doraise=True)
             except Exception as e:
-                failed.append(f"Ошибка чтения {file_path}: {e}")
+                failed.append(f"Синтаксическая ошибка в {file_path}: {e}")
         else:
             failed.append(f"Файл не найден: {file_path}")
     

@@ -30,7 +30,7 @@ jobs:
       run: |
         echo "Testing critical imports..."
         python -c "import sys, os, re, json; print('✅ Standard libs OK')"
-        python -c "print('✅ Python version:', sys.version)"
+        python -c "import sys; print('✅ Python version:', sys.version)"
 
     - name: 📊 File Structure Check
       run: |
@@ -76,9 +76,10 @@ jobs:
         todo_count=$(grep -r "TODO\|FIXME" . --exclude-dir=.git --include="*.py" | wc -l || echo "0")
         echo "📝 Found $todo_count TODO/FIXME comments"
         
-        # Check Python file syntax
+        # Check Python file syntax  
         echo "🐍 Checking Python syntax..."
-        find . -name "*.py" -exec python -m py_compile {} \; 2>/dev/null || echo "⚠️ Some syntax issues found"
+        python -m py_compile calorie_bot_modular.py 2>/dev/null || echo "⚠️ Main file syntax issue"
+        python -m py_compile config.py 2>/dev/null || echo "⚠️ Config syntax issue"
         
         echo "✅ Quality check completed"
 

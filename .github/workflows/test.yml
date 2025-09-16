@@ -12,7 +12,7 @@ jobs:
     
     strategy:
       matrix:
-        python-version: [3.9, 3.10, 3.11, 3.12]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
     - name: 📥 Checkout code
@@ -48,7 +48,11 @@ jobs:
 
     - name: 🧪 Run BJU extraction tests (if time permits)
       run: |
-        python test_bju_extraction.py || echo "⚠️ BJU test skipped due to dependencies"
+        if [ -f "test_bju_extraction.py" ]; then
+          python test_bju_extraction.py || echo "⚠️ BJU test failed"
+        else
+          echo "⚠️ BJU test file not found - OK for CI"
+        fi
 
     - name: 🧪 Test mock responses
       run: |
