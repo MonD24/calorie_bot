@@ -112,6 +112,7 @@ def main():
         application.add_handler(CommandHandler("burn", burn_command))
         application.add_handler(CommandHandler("left", left_command))
         application.add_handler(CommandHandler("clear", clear_today_command))
+        application.add_handler(CommandHandler("clear_today", clear_today_command))
         application.add_handler(CommandHandler("reset", reset_command))
         application.add_handler(CommandHandler("limit", limit_command))
         application.add_handler(CommandHandler("food", food_log_command))
