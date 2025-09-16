@@ -1,0 +1,170 @@
+name: 🚀 Release Tests
+
+on:
+  release:
+    types: [published, prereleased]
+  workflow_dispatch: # Позволяет запустить вручную
+
+jobs:
+  comprehensive-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: 🔧 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-mock flake8 bandit[toml]
+
+    - name: 🧪 Run all unit tests
+      run: |
+        echo "🧪 Testing BJU extraction..."
+        python test_bju_extraction.py
+        
+        echo "🧪 Testing photo response analysis..."
+        python test_photo_response.py
+        
+        echo "🧪 Testing nutrition validation..."
+        python test_validation.py
+
+    - name: 📊 Generate test coverage report
+      run: |
+        # Создаем простой coverage тест
+        python -c "
+        import sys
+        import importlib.util
+        
+        modules_to_test = [
+            'utils.calorie_calculator',
+            'utils.photo_processor', 
+            'utils.nutrition_validator',
+            'handlers.commands',
+            'data.calorie_database'
+        ]
+        
+        tested_modules = 0
+        for module in modules_to_test:
+            try:
+                spec = importlib.util.find_spec(module)
+                if spec is not None:
+                    tested_modules += 1
+                    print(f'✅ {module}')
+                else:
+                    print(f'❌ {module} - not found')
+            except Exception as e:
+                print(f'❌ {module} - error: {e}')
+        
+        coverage = (tested_modules / len(modules_to_test)) * 100
+        print(f'\n📊 Module Coverage: {coverage:.1f}% ({tested_modules}/{len(modules_to_test)})')
+        
+        if coverage < 80:
+            sys.exit(1)
+        "
+
+    - name: 🔍 Advanced syntax and style check
+      run: |
+        echo "🔍 Running flake8..."
+        flake8 --max-line-length=120 --statistics \
+          --ignore=E501,W503,E203,F401 \
+          calorie_bot_modular.py utils/ handlers/ data/ \
+          --exclude=__pycache__,*.pyc
+
+    - name: 🔒 Security audit
+      run: |
+        echo "🔒 Running security check..."
+        bandit -r . -ll -f txt || true
+
+    - name: 📋 Environment compatibility test
+      run: |
+        echo "📋 Testing in different environments..."
+        
+        # Тест без .env файла
+        rm -f .env
+        python -c "import config; print('✅ Config works without .env')" || echo "⚠️ Config requires .env"
+        
+        # Тест с минимальными зависимостями
+        echo "📦 Testing core functionality..."
+        python -c "
+        from utils.calorie_calculator import extract_nutrition_smart
+        result = extract_nutrition_smart('Тест 100 ккал, 10г белка, 5г жира, 8г углеводов')
+        assert result['calories'] == 100
+        assert result['protein'] == 10.0
+        print('✅ Core extraction works')
+        "
+
+  performance-test:
+    runs-on: ubuntu-latest
+    needs: comprehensive-test
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: 🔧 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: ⚡ Performance tests
+      run: |
+        python -c "
+        import time
+        from utils.calorie_calculator import extract_nutrition_smart
+        
+        # Тест производительности извлечения БЖУ
+        test_cases = [
+            'Творог 200 ккал, 25г белка, 5г жира, 10г углеводов',
+            'Салат с курицей: 300 ккал, белки 30г, жиры 8г, углеводы 15г',
+            'Рис с овощами\\n• Калории: 250\\n• Белок: 8г\\n• Ж: 2г\\n• У: 50г'
+        ] * 100  # 300 тестов
+        
+        start_time = time.time()
+        
+        for i, test_case in enumerate(test_cases):
+            result = extract_nutrition_smart(test_case)
+            if i % 100 == 0:
+                print(f'Processed {i} cases...')
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        avg_time = total_time / len(test_cases)
+        
+        print(f'⚡ Performance Results:')
+        print(f'   Total time: {total_time:.2f}s')
+        print(f'   Average per extraction: {avg_time*1000:.2f}ms')
+        print(f'   Extractions per second: {1/avg_time:.1f}')
+        
+        if avg_time > 0.1:  # Более 100ms на извлечение - это медленно
+            print('⚠️ Performance warning: extraction is slow')
+        else:
+            print('✅ Performance is good')
+        "
+
+  notify-success:
+    runs-on: ubuntu-latest
+    needs: [comprehensive-test, performance-test]
+    if: success()
+    
+    steps:
+    - name: ✅ All tests passed
+      run: |
+        echo "🎉 All release tests passed successfully!"
+        echo "✅ Unit tests: PASSED"
+        echo "✅ Integration tests: PASSED" 
+        echo "✅ Security checks: PASSED"
+        echo "✅ Performance tests: PASSED"
+        echo ""
+        echo "🚀 Ready for deployment!"

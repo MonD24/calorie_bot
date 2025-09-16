@@ -17,27 +17,44 @@ sys.path.append(str(Path(__file__).parent.parent))
 import openai_safe
 
 from utils.calorie_calculator import ask_gpt, extract_nutrition_smart, validate_calorie_result
+from utils.nutrition_validator import validate_nutrition_data, estimate_portion_calories
 from data.calorie_database import CALORIE_DATABASE
 
 
 async def analyze_food_photo(image_base64: str) -> Dict[str, Any]:
     """Анализирует фото еды через GPT Vision"""
-    prompt = f"""Определи что за еда на фото и ТОЧНО рассчитай калорийность и белок.
+    prompt = f"""Определи что за еда на фото и ТОЧНО рассчитай полные БЖУ (белки, жиры, углеводы) и калорийность.
 
 Используй следующие справочные данные:
 {CALORIE_DATABASE}
 
+КАЛОРИЙНОСТЬ НА 100г (ЗАПОМНИ!):
+- Творог 0%: 70 ккал, 18г белка, 0г жира, 3г углеводов
+- Творог 5%: 120 ккал, 17г белка, 5г жира, 2г углеводов  
+- Творог 9%: 160 ккал, 16г белка, 9г жира, 2г углеводов
+- Банан: 90 ккал, 1.5г белка, 0.3г жира, 23г углеводов
+- Арахисовая паста: 600 ккал, 25г белка, 50г жира, 20г углеводов
+
 ВАЖНЫЕ ПРАВИЛА:
 1. ВНИМАТЕЛЬНО оцени размер порции относительно посуды/ложки на фото
 2. Стандартные порции: столовая ложка ~15г, чайная ~5г, стакан ~200мл
-3. Творог 200г = ~160 ккал и 35г белка, дыня 100г = ~35 ккал и 0.6г белка
-4. НЕ ЗАВЫШАЙ калорийность! Будь консервативен в оценках
-5. Если сомневаешься между двумя значениями - выбирай меньшее
+3. ОБЯЗАТЕЛЬНО считай по шагам: сначала каждый ингредиент отдельно, потом сумма
+4. ПРОВЕРЯЙ что белки + жиры + углеводы дают правильные калории (белки*4 + жиры*9 + углеводы*4)
+5. Если расчет не сходится - пересчитай порции!
 
 ФОРМАТ ОТВЕТА:
-Дай краткое описание блюда, затем укажи калорийность и белок в формате: "X ккал, Y г белка"
+ОБЯЗАТЕЛЬНО укажи все 4 показателя в точном формате: "X ккал, Y г белка, Z г жиров, W г углеводов"
+Дай краткое описание блюда, затем строго в указанном формате все нутриенты.
 
-Пример: "Творог с кусочками дыни и ложкой варенья. Итого: 280 ккал, 35 г белка"
+Пример: "Творог с кусочками дыни и ложкой варенья. Итого: 280 ккал, 35 г белка, 5 г жиров, 18 г углеводов"
+
+ОБЯЗАТЕЛЬНЫЙ ФОРМАТ РАСЧЕТА:
+1. Сначала опиши что видишь и оцени порции каждого ингредиента
+2. Посчитай каждый ингредиент: "Творог 9% 150г: 160*1.5 = 240 ккал, 16*1.5 = 24г белка..."  
+3. Суммируй: "Всего: X + Y + Z = итого ккал"
+4. Проверь: белки*4 + жиры*9 + углеводы*4 = итоговые калории?
+
+ВАЖНО: Даже если жиров или углеводов очень мало, укажи их - НЕ пропускай!
 
 Если нужно уточнение - задай ОДИН вопрос с "ВОПРОС:".
 """
@@ -68,6 +85,14 @@ async def analyze_food_photo(image_base64: str) -> Dict[str, Any]:
         nutrition = extract_nutrition_smart(response)
         description = extract_description_from_photo_response(response)
         
+        # Логируем извлеченные данные
+        logging.info(f"Извлечено: калории={nutrition['calories']}, белки={nutrition['protein']}, жиры={nutrition['fat']}, углеводы={nutrition['carbs']}")
+        
+        # Валидируем данные
+        if nutrition['calories'] or nutrition['protein']:
+            nutrition = validate_nutrition_data(nutrition, description)
+            logging.info(f"После валидации: калории={nutrition['calories']}, белки={nutrition['protein']}, жиры={nutrition['fat']}, углеводы={nutrition['carbs']}")
+        
         if nutrition['calories'] and description:
             validated_kcal = validate_calorie_result(description, nutrition['calories'])
             result = {
@@ -76,9 +101,13 @@ async def analyze_food_photo(image_base64: str) -> Dict[str, Any]:
                 'success': True
             }
             
-            # Добавляем белок если найден
+            # Добавляем все БЖУ если найдены
             if nutrition['protein'] is not None:
                 result['protein'] = round(nutrition['protein'], 1)
+            if nutrition['fat'] is not None:
+                result['fat'] = round(nutrition['fat'], 1)
+            if nutrition['carbs'] is not None:
+                result['carbs'] = round(nutrition['carbs'], 1)
             
             return result
         else:

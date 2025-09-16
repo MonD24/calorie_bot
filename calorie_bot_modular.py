@@ -21,7 +21,7 @@ from handlers.commands import (
     start_command, help_command, goal_command, 
     weight_command, burn_command, left_command,
     clear_today_command, reset_command, limit_command, food_log_command,
-    evening_summary_function, morning_weight_function
+    macros_command, evening_summary_function, morning_weight_function
 )
 from handlers.text_handler import handle_text_message
 from handlers.photo_handler import handle_photo_message
@@ -41,10 +41,10 @@ logger = logging.getLogger(__name__)
 
 async def send_morning_weight_message(context):
     """Отправка утреннего сообщения о весе всем пользователям"""
-    from utils.user_data import get_all_user_ids
+    from utils.user_data import get_all_users
     
     try:
-        user_ids = get_all_user_ids()
+        user_ids = get_all_users()
         for user_id in user_ids:
             try:
                 await morning_weight_function(context, user_id)
@@ -56,10 +56,10 @@ async def send_morning_weight_message(context):
 
 async def send_evening_summary_message(context):
     """Отправка вечернего обзора всем пользователям"""
-    from utils.user_data import get_all_user_ids
+    from utils.user_data import get_all_users
     
     try:
-        user_ids = get_all_user_ids()
+        user_ids = get_all_users()
         for user_id in user_ids:
             try:
                 await evening_summary_function(context, user_id)
@@ -115,6 +115,7 @@ def main():
         application.add_handler(CommandHandler("reset", reset_command))
         application.add_handler(CommandHandler("limit", limit_command))
         application.add_handler(CommandHandler("food", food_log_command))
+        application.add_handler(CommandHandler("macros", macros_command))
         
         # Добавляем обработчики сообщений
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
