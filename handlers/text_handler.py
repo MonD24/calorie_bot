@@ -16,7 +16,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 import openai_safe
 
 from utils.user_data import (
-    get_user_profile, save_user_profile, get_user_diary, 
+    get_user_profile, save_user_profile, get_user_diary,
     save_user_diary, get_user_weights, save_user_weights,
     get_user_food_log, save_user_food_log, get_user_burned, save_user_burned
 )
@@ -147,18 +147,18 @@ async def handle_sex_input(update, context, text, profile, user_id):
     if sex not in ['муж', 'жен']:
         await update.message.reply_text('Введите "муж" или "жен"')
         return
-    
+
     profile['sex'] = sex
     profile['registration_step'] = 'goal'
     save_user_profile(user_id, profile)
-    
+
     # Теперь спрашиваем о цели
     keyboard = [
         [InlineKeyboardButton('🔥 Похудение (дефицит 20%)', callback_data='goal_deficit')],
         [InlineKeyboardButton('⚖️ Поддержание веса', callback_data='goal_maintain')],
         [InlineKeyboardButton('💪 Набор массы (профицит 10%)', callback_data='goal_surplus')]
     ]
-    
+
     await update.message.reply_text(
         '🎯 Выберите вашу цель:',
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -200,36 +200,36 @@ async def handle_burn_calories(update, context, text, user_id, today):
 
 def parse_manual_calories(text):
     """Парсит текст на предмет явного указания калорий пользователем
-    
+
     Поддерживаемые форматы:
     - "шоколадка, 205 ккал"
-    - "шоколадка 205 ккал"  
+    - "шоколадка 205 ккал"
     - "шоколадка - 205ккал"
     - "шоколадка: 205 калорий"
-    
+
     Returns:
         tuple: (food_name, calories) или (None, None) если не найдено
     """
     import re
-    
+
     # Различные паттерны для поиска калорий
     patterns = [
         r'^(.+?)[,\-:\s]+(\d+)\s*(?:ккал|калори[йяе]|калорий|kcal)\s*$',
         r'^(.+?)\s+(\d+)\s*(?:ккал|калори[йяе]|калорий|kcal)\s*$',
     ]
-    
+
     text_clean = text.strip()
-    
+
     for pattern in patterns:
         match = re.search(pattern, text_clean, re.IGNORECASE)
         if match:
             food_name = match.group(1).strip()
             calories = int(match.group(2))
-            
+
             # Проверяем разумность значения калорий
             if 1 <= calories <= 5000:  # Разумный диапазон для одного приема пищи
                 return food_name, calories
-    
+
     return None, None
 
 
@@ -247,7 +247,7 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
             # Сохраняем данные напрямую
             diary[today] += manual_calories
             save_user_diary(user_id, diary)
-            
+
             if today not in food_log:
                 food_log[today] = []
             # При ручном вводе БЖУ неизвестны
@@ -265,11 +265,11 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
                 ])
             )
             return
-            
+
         except Exception as e:
-            log_detailed_error(e, "при сохранении ручного ввода калорий", str(user_id), 
+            log_detailed_error(e, "при сохранении ручного ввода калорий", str(user_id),
                              {"food_name": food_name, "calories": manual_calories})
-            error_msg = format_error_message(e, "при сохранении данных", 
+            error_msg = format_error_message(e, "при сохранении данных",
                                            f'Блюдо: "{food_name}", калории: {manual_calories}')
             await update.message.reply_text(error_msg)
             return
@@ -278,7 +278,7 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
     try:
         prompt = create_calorie_prompt(text)
         messages = [{'role': 'user', 'content': [{'type': 'text', 'text': prompt}]}]
-        
+
         response = await ask_gpt(messages)
         logging.info(f"GPT response for food: {response}")
 
@@ -306,7 +306,7 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
         # Сохраняем данные
         diary[today] += kcal
         save_user_diary(user_id, diary)
-        
+
         if today not in food_log:
             food_log[today] = []
         # Сохраняем в формате: [название, калории, белки, жиры, углеводы]
@@ -325,7 +325,7 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
             nutrition_parts.append(f'{fat:.1f}г жиров')
         if carbs:
             nutrition_parts.append(f'{carbs:.1f}г углеводов')
-        
+
         nutrition_text = ', '.join(nutrition_parts)
 
         await update.message.reply_text(
@@ -336,7 +336,7 @@ async def handle_food_input(update, context, text, user_id, today, diary, food_l
         )
 
     except Exception as e:
-        log_detailed_error(e, "при обработке описания еды через GPT", str(user_id), 
+        log_detailed_error(e, "при обработке описания еды через GPT", str(user_id),
                          {"user_text": text})
         error_msg = format_error_message(e, "при обработке описания еды", f'Ваш текст: "{text}"')
         await update.message.reply_text(error_msg)
@@ -348,17 +348,17 @@ async def handle_ambiguous_number(update, context, text):
         clean_text = text.replace(',', '.').strip()
         if clean_text.replace('.', '').isdigit():
             potential_value = float(clean_text)
-            
+
             # Если число в пределах возможного веса (30-200 кг)
             if 30 <= potential_value <= 200:
                 keyboard = [
-                    [InlineKeyboardButton(f'⚖️ Это вес ({potential_value} кг)', 
+                    [InlineKeyboardButton(f'⚖️ Это вес ({potential_value} кг)',
                                           callback_data=f'save_weight_{potential_value}')],
-                    [InlineKeyboardButton('🍽️ Это количество калорий', 
+                    [InlineKeyboardButton('🍽️ Это количество калорий',
                                           callback_data=f'save_calories_{potential_value}')],
                     [InlineKeyboardButton('❌ Отмена', callback_data='cancel_input')]
                 ]
-                
+
                 await update.message.reply_text(
                     f'Вы ввели число {potential_value}. Что это:\n'
                     f'• Ваш вес в килограммах?\n'
@@ -366,13 +366,13 @@ async def handle_ambiguous_number(update, context, text):
                     f'Выберите вариант:',
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
-                
+
                 context.user_data['pending_number'] = potential_value
                 return True
-                
+
     except ValueError:
         pass
-    
+
     return False
 
 
@@ -418,7 +418,7 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
         # Сохраняем результат
         diary[today] += kcal
         save_user_diary(user_id, diary)
-        
+
         if today not in food_log:
             food_log[today] = []
         # Сохраняем в формате: [название, калории, белки, жиры, углеводы]
@@ -437,7 +437,7 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
             nutrition_parts.append(f'{fat:.1f}г жиров')
         if carbs:
             nutrition_parts.append(f'{carbs:.1f}г углеводов')
-        
+
         nutrition_text = ', '.join(nutrition_parts)
 
         await update.message.reply_text(
@@ -448,9 +448,9 @@ async def handle_food_clarification(update, context, text, user_id, today, diary
         )
 
     except Exception as e:
-        log_detailed_error(e, "при обработке уточнения еды", str(user_id), 
+        log_detailed_error(e, "при обработке уточнения еды", str(user_id),
                          {"original_description": original_description, "clarification": clarification})
-        error_msg = format_error_message(e, "при обработке уточнения", 
+        error_msg = format_error_message(e, "при обработке уточнения",
                                        f'Исходное: "{original_description}", Уточнение: "{clarification}"')
         await update.message.reply_text(error_msg)
 
