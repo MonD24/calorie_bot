@@ -174,6 +174,7 @@ async def handle_daily_weight(update, context, text, weights, user_id, today):
         if limits['min'] <= weight <= limits['max']:
             weights[today] = weight
             save_user_weights(user_id, weights)
+            logging.info(f"User {user_id} recorded weight: {weight} kg on {today}")
             await update.message.reply_text(f'✅ Вес {weight} кг записан!')
             context.user_data['step'] = None
         else:

@@ -466,8 +466,13 @@ async def morning_weight_function(context, user_id):
             text='🌅 **Доброе утро!**\n\n⚖️ Введите ваш текущий вес (кг):',
             parse_mode='Markdown'
         )
-        # Устанавливаем ожидание ввода веса
-        context.user_data['step'] = 'daily_weight'
+        # Устанавливаем ожидание ввода веса для конкретного пользователя
+        # Используем application.user_data с числовым ID
+        user_id_int = int(user_id) if isinstance(user_id, str) else user_id
+        if user_id_int not in context.application.user_data:
+            context.application.user_data[user_id_int] = {}
+        context.application.user_data[user_id_int]['step'] = 'daily_weight'
+        logging.info(f"Morning weight request sent to user {user_id}, step set to 'daily_weight'")
     except Exception as e:
         logging.error(f"Failed to send morning weight request to {user_id}: {e}")
 

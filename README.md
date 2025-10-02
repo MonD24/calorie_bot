@@ -4,6 +4,7 @@
 ![Telegram](https://img.shields.io/badge/telegram-bot-blue.svg)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT4--Vision-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Tests](https://github.com/MonD24/calorie_bot/workflows/Tests/badge.svg)
 
 Умный Telegram-бот для контроля калорий с ИИ-анализом фотографий еды и персональными рекомендациями.
 
@@ -168,7 +169,45 @@ python calorie_bot_modular.py
 
 [Полный CHANGELOG.md](CHANGELOG.md)
 
-## 🤝 Участие в разработке
+## � Тестирование
+
+Все тесты находятся в директории `tests/` и автоматически запускаются в GitHub Actions.
+
+### Локальный запуск
+
+**Windows:**
+```bash
+run_tests.bat
+```
+
+**Linux/macOS:**
+```bash
+chmod +x run_tests.sh
+./run_tests.sh
+```
+
+**Или напрямую через pytest:**
+```bash
+# Все тесты
+pytest tests/ -v
+
+# Конкретный тест
+pytest tests/test_simple.py -v
+
+# С покрытием кода
+pytest tests/ --cov=. --cov-report=html
+```
+
+### CI/CD
+
+Тесты автоматически запускаются при:
+- Push в ветки `main`, `beer-fix`, `develop`
+- Создании Pull Request
+- Ручном запуске через GitHub Actions
+
+Подробнее: [tests/README.md](tests/README.md)
+
+## �🤝 Участие в разработке
 
 Читайте [CONTRIBUTING.md](CONTRIBUTING.md) для инструкций по участию.
 
