@@ -29,8 +29,9 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
         # Калории из БЖУ: белки и углеводы = 4 ккал/г, жиры = 9 ккал/г
         calculated_calories = protein * 4 + fat * 9 + carbs * 4
 
-        # Допустимое отклонение 20%
-        if abs(calories - calculated_calories) / calculated_calories > 0.3:
+        # Допустимое отклонение 30%
+        # Защита от деления на ноль
+        if calculated_calories > 0 and abs(calories - calculated_calories) / calculated_calories > 0.3:
             warnings.append(f"Несоответствие калорий: заявлено {calories}, по БЖУ {calculated_calories:.0f}")
 
             # Если расхождение критическое, используем расчет по БЖУ
@@ -52,28 +53,28 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
     logging.info(f"🔧 Найдено ингредиентов: {ingredients_count} - {ingredients_found}")
 
     # АГРЕССИВНАЯ проверка калорий для многокомпонентных блюд
-    if ingredients_count >= 3 and calories and calories < 400:
-        logging.info(f"🔧 КРИТИЧЕСКИЙ ТРИГГЕР: Очень мало калорий для сложного блюда: {calories} для {ingredients_count} ингредиентов")
-        warnings.append(f"КРИТИЧЕСКИ мало калорий ({calories}) для блюда из {ingredients_count} ингредиентов ({', '.join(ingredients_found)})")
+    if ingredients_count >= 3 and validated['calories'] and validated['calories'] < 400:
+        logging.info(f"🔧 КРИТИЧЕСКИЙ ТРИГГЕР: Очень мало калорий для сложного блюда: {validated['calories']} для {ingredients_count} ингредиентов")
+        warnings.append(f"КРИТИЧЕСКИ мало калорий ({validated['calories']}) для блюда из {ingredients_count} ингредиентов ({', '.join(ingredients_found)})")
 
         # Для блюд из 3+ ингредиентов минимум 400 ккал
         min_calories = 400
         if has_chicken and has_grain:
             min_calories = 420  # Курица + гарнир + другие ингредиенты
 
-        validated['calories'] = max(calories, min_calories)
+        validated['calories'] = max(validated['calories'], min_calories)
         warnings.append(f"Калории принудительно увеличены до {validated['calories']}")
-        logging.info(f"🔧 ПРИНУДИТЕЛЬНОЕ ИСПРАВЛЕНИЕ: калории {calories} -> {validated['calories']}")
+        logging.info(f"🔧 ПРИНУДИТЕЛЬНОЕ ИСПРАВЛЕНИЕ: калории {validated['calories']} -> {validated['calories']}")
 
-    elif ingredients_count >= 2 and calories and calories < 320:
-        logging.info(f"🔧 ТРИГГЕР: Мало калорий для сложного блюда: {calories} для {ingredients_count} ингредиентов")
-        warnings.append(f"Подозрительно мало калорий ({calories}) для блюда из {ingredients_count} ингредиентов ({', '.join(ingredients_found)})")
+    elif ingredients_count >= 2 and validated['calories'] and validated['calories'] < 320:
+        logging.info(f"🔧 ТРИГГЕР: Мало калорий для сложного блюда: {validated['calories']} для {ingredients_count} ингредиентов")
+        warnings.append(f"Подозрительно мало калорий ({validated['calories']}) для блюда из {ingredients_count} ингредиентов ({', '.join(ingredients_found)})")
         estimated = estimate_portion_calories(description)
         logging.info(f"🔧 Оценочные калории: {estimated}")
 
         # Для 2+ ингредиентов минимум 320 ккал
         min_suggested = max(320, estimated if estimated else 320)
-        if min_suggested > calories * 1.15:
+        if min_suggested > validated['calories'] * 1.15:
             validated['calories'] = min_suggested
             warnings.append(f"Калории исправлены на {min_suggested}")
             logging.info(f"🔧 ИСПРАВЛЕНИЕ: калории изменены на {min_suggested}")
@@ -81,23 +82,23 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
     # СПЕЦИАЛЬНАЯ проверка для комбинированных блюд с курицей
     has_egg = any(word in description_lower for word in ['яйц'])
 
-    if has_chicken and calories and calories < 420:
-        logging.info(f"🔧 ТРИГГЕР: Блюдо с курицей, мало калорий: {calories}")
-        warnings.append(f"Подозрительно мало калорий ({calories}) для блюда с курицей")
+    if has_chicken and validated['calories'] and validated['calories'] < 420:
+        logging.info(f"🔧 ТРИГГЕР: Блюдо с курицей, мало калорий: {validated['calories']}")
+        warnings.append(f"Подозрительно мало калорий ({validated['calories']}) для блюда с курицей")
 
         if has_grain and has_egg and ingredients_count >= 3:
             # Курица + гарнир + яйцо + овощи = минимум 420 калорий
-            validated['calories'] = max(calories, 420)
+            validated['calories'] = max(validated['calories'], 420)
             warnings.append(f"Калории исправлены до {validated['calories']} для полного обеда с курицей")
             logging.info(f"🔧 ИСПРАВЛЕНИЕ: калории полного обеда с курицей -> {validated['calories']}")
         elif has_grain:
             # Курица + гарнир = минимум 380 калорий
-            validated['calories'] = max(calories, 380)
+            validated['calories'] = max(validated['calories'], 380)
             warnings.append(f"Калории исправлены до {validated['calories']} для курицы с гарниром")
             logging.info(f"🔧 ИСПРАВЛЕНИЕ: калории курицы с гарниром -> {validated['calories']}")
         else:
             # Просто курица = минимум 320 калорий
-            validated['calories'] = max(calories, 320)
+            validated['calories'] = max(validated['calories'], 320)
             warnings.append(f"Калории исправлены до {validated['calories']} для блюда с курицей")
             logging.info(f"🔧 ИСПРАВЛЕНИЕ: калории с курицей -> {validated['calories']}")
 
@@ -136,11 +137,11 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
         warnings.append("Подозрительно низкая калорийность для блюда с бананом")
 
     # Проверяем базовые пределы
-    if protein and protein < 0.5:
+    if protein is not None and protein < 0.5:
         validated['protein'] = 0.5
-    if fat and fat < 0.1:
+    if fat is not None and fat < 0.1:
         validated['fat'] = 0.1
-    if carbs and carbs < 0.5:
+    if carbs is not None and carbs < 0.5:
         validated['carbs'] = 0.5
 
     # АГРЕССИВНАЯ ПРОВЕРКА нулевых БЖУ для сложных блюд
@@ -181,9 +182,9 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
             logging.info(f"🔧 СПЕЦКОРРЕКЦИЯ: углеводы -> 18.0г")
 
         # Если калории меньше 300 - исправляем (это сложное блюдо с гарниром)
-        if calories is not None and calories < 300:
+        if validated.get('calories') is not None and validated['calories'] < 300:
             validated['calories'] = 350  # Реалистично для курицы с гарниром и овощами
-            warnings.append(f"Специальное исправление калорий для '{description}': {calories} -> 350 ккал")
+            warnings.append(f"Специальное исправление калорий для '{description}': {validated['calories']} -> 350 ккал")
             logging.info(f"🔧 СПЕЦКОРРЕКЦИЯ: калории -> 350 ккал")
 
         # Если белок слишком мало для блюда с курицей - исправляем
