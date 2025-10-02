@@ -8,7 +8,7 @@ import os
 import re
 
 
-def smoke_test_regex():
+def test_smoke_regex():
     """Дымовой тест: проверяем что регулярки работают"""
     
     # Тест калорий
@@ -25,34 +25,29 @@ def smoke_test_regex():
     text = "15г жиров"
     fat_match = re.search(r'(\d+)г?\s*жиров?', text)
     assert fat_match and int(fat_match.group(1)) == 15, "Жиры не извлекаются"
-    
-    return True
 
 
-def smoke_test_files():
+def test_smoke_files():
     """Проверяем что ключевые файлы существуют"""
     required = ['calorie_bot_modular.py', 'config.py', 'requirements.txt']
     
     for filename in required:
         filepath = os.path.join(os.path.dirname(os.path.dirname(__file__)), filename)
         assert os.path.exists(filepath), f"Отсутствует файл: {filename}"
-    
-    return True
 
 
-def smoke_test_imports():
+def test_smoke_imports():
     """Проверяем базовые импорты без сложных зависимостей"""
     try:
         import json
         import re
         import os
         import sys
-        return True
     except Exception as e:
         raise AssertionError(f"Базовые импорты не работают: {e}")
 
 
-def smoke_test_nutrition_logic():
+def test_smoke_nutrition_logic():
     """Проверяем логику расчета калорий по БЖУ"""
     
     # Формула: белки*4 + жиры*9 + углеводы*4
@@ -66,18 +61,16 @@ def smoke_test_nutrition_logic():
     deviation = abs(claimed_calories - expected_calories) / expected_calories
     
     assert deviation > 0.3, "Валидация отклонений не работает"
-    
-    return True
 
 
 def run_smoke_tests():
-    """Запуск всех дымовых тестов"""
+    """Запуск всех дымовых тестов (для backward compatibility)"""
     
     tests = [
-        (smoke_test_regex, "RegEx extraction"),
-        (smoke_test_files, "File structure"), 
-        (smoke_test_imports, "Basic imports"),
-        (smoke_test_nutrition_logic, "BJU calculation logic")
+        (test_smoke_regex, "RegEx extraction"),
+        (test_smoke_files, "File structure"), 
+        (test_smoke_imports, "Basic imports"),
+        (test_smoke_nutrition_logic, "BJU calculation logic")
     ]
     
     print("💨 Smoke Tests - Ultra Fast")
