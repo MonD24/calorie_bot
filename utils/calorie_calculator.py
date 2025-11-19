@@ -201,13 +201,13 @@ def extract_calories_smart(response_text: str) -> Optional[int]:
 def extract_protein_smart(response_text: str) -> Optional[float]:
     """Умное извлечение белка из ответа GPT"""
     response_text = response_text.strip()
-    logging.info(f"Extracting protein from: {response_text}")
+    logging.info(f"Extracting protein from: {response_text[:200]}")
 
     # Ищем белок в различных форматах
     patterns = [
         r'(\d+(?:[.,]\d+)?)\s*г\s*белка',
-        r'белок[а-я]*:?\s*(\d+(?:[.,]\d+)?)',
-        r'белки:?\s*(\d+(?:[.,]\d+)?)',  # белки: 30
+        r'белок[а-я]*:?\s*(\d+(?:[.,]\d+)?)\s*г',
+        r'белки:?\s*(\d+(?:[.,]\d+)?)\s*г',  # белки: 30г
         r'(\d+(?:[.,]\d+)?)\s*г\s*белк',
         r'белк[а-я]*\s*(\d+(?:[.,]\d+)?)',
         r'(\d+(?:[.,]\d+)?)\s*грамм\s*белка',  # 25 грамм белка
@@ -217,15 +217,19 @@ def extract_protein_smart(response_text: str) -> Optional[float]:
         r'(\d+(?:[.,]\d+)?)\s*g\s*protein'
     ]
 
+    all_matches = []
     for pattern in patterns:
         matches = re.findall(pattern, response_text, re.IGNORECASE)
         if matches:
-            # Берем последнее найденное значение
-            result = float(matches[-1].replace(',', '.'))
-            logging.info(f"Found protein using pattern '{pattern}': {result}")
-            return result
+            all_matches.extend([(float(m.replace(',', '.')), pattern) for m in matches])
 
-    logging.warning(f"Could not extract protein from: {response_text}")
+    if all_matches:
+        # Берем ПОСЛЕДНЕЕ найденное значение (обычно это итоговое)
+        result, pattern = all_matches[-1]
+        logging.info(f"Found protein using pattern '{pattern}': {result}г (из {len(all_matches)} найденных)")
+        return result
+
+    logging.warning(f"Could not extract protein from: {response_text[:200]}")
     return None
 
 
@@ -240,23 +244,27 @@ def extract_fat_smart(response_text: str) -> Optional[float]:
     # Ищем жиры в различных форматах
     patterns = [
         r'(\d+(?:[.,]\d+)?)\s*г\s*жиров?',
-        r'жир[а-я]*:?\s*(\d+(?:[.,]\d+)?)',
+        r'жир[а-я]*:?\s*(\d+(?:[.,]\d+)?)\s*г',
         r'(\d+(?:[.,]\d+)?)\s*г\s*жир',
         r'жир[а-я]*\s*(\d+(?:[.,]\d+)?)',
         r'fat:?\s*(\d+(?:[.,]\d+)?)',
         r'(\d+(?:[.,]\d+)?)\s*g\s*fat',
-        r'ж:\s*(\d+(?:[.,]\d+)?)',
-        r'(\d+(?:[.,]\d+)?)\s*ж\s',
+        r'ж:?\s*(\d+(?:[.,]\d+)?)\s*г',
+        r'(\d+(?:[.,]\d+)?)\s*г?\s*ж\b',
         r'липид[а-я]*:?\s*(\d+(?:[.,]\d+)?)'
     ]
 
+    all_matches = []
     for pattern in patterns:
         matches = re.findall(pattern, response_text, re.IGNORECASE)
         if matches:
-            # Берем последнее найденное значение
-            result = float(matches[-1].replace(',', '.'))
-            logging.info(f"📊 ЖИРЫ: Найдено {result}г по паттерну '{pattern}'")
-            return result
+            all_matches.extend([(float(m.replace(',', '.')), pattern) for m in matches])
+
+    if all_matches:
+        # Берем ПОСЛЕДНЕЕ найденное значение (обычно это итоговое)
+        result, pattern = all_matches[-1]
+        logging.info(f"📊 ЖИРЫ: Найдено {result}г по паттерну '{pattern}' (из {len(all_matches)} найденных)")
+        return result
 
     logging.warning(f"📊 ЖИРЫ: НЕ НАЙДЕНО в тексте")
     return None
@@ -273,7 +281,7 @@ def extract_carbs_smart(response_text: str) -> Optional[float]:
     # Ищем углеводы в различных форматах
     patterns = [
         r'(\d+(?:[.,]\d+)?)\s*г\s*углеводов?',
-        r'углевод[а-я]*:?\s*(\d+(?:[.,]\d+)?)',
+        r'углевод[а-я]*:?\s*(\d+(?:[.,]\d+)?)\s*г',
         r'(\d+(?:[.,]\d+)?)\s*г\s*углевод',
         r'углевод[а-я]*\s*(\d+(?:[.,]\d+)?)',
         r'(\d+(?:[.,]\d+)?)\s*грамм\s*углеводов?',  # 20 грамм углеводов
@@ -281,18 +289,22 @@ def extract_carbs_smart(response_text: str) -> Optional[float]:
         r'(\d+(?:[.,]\d+)?)\s*g\s*carbs?',
         r'carbohydrates?:?\s*(\d+(?:[.,]\d+)?)',
         r'(\d+(?:[.,]\d+)?)\s*g\s*carbohydrates?',
-        r'у:?\s*(\d+(?:[.,]\d+)?)',  # у: 45г или У 55 г
+        r'у:?\s*(\d+(?:[.,]\d+)?)\s*г',  # у: 45г или У 55 г
         r'(\d+(?:[.,]\d+)?)\s*г?\s*у\b',  # 45г у или 45 у
         r'сахар[а-я]*:?\s*(\d+(?:[.,]\d+)?)'
     ]
 
+    all_matches = []
     for pattern in patterns:
         matches = re.findall(pattern, response_text, re.IGNORECASE)
         if matches:
-            # Берем последнее найденное значение
-            result = float(matches[-1].replace(',', '.'))
-            logging.info(f"📊 УГЛЕВОДЫ: Найдено {result}г по паттерну '{pattern}'")
-            return result
+            all_matches.extend([(float(m.replace(',', '.')), pattern) for m in matches])
+
+    if all_matches:
+        # Берем ПОСЛЕДНЕЕ найденное значение (обычно это итоговое)
+        result, pattern = all_matches[-1]
+        logging.info(f"📊 УГЛЕВОДЫ: Найдено {result}г по паттерну '{pattern}' (из {len(all_matches)} найденных)")
+        return result
 
     logging.warning(f"📊 УГЛЕВОДЫ: НЕ НАЙДЕНО в тексте")
     return None
@@ -303,22 +315,67 @@ def extract_nutrition_smart(response_text: str) -> Dict[str, Optional[float]]:
     logging.info(f"📊 ИЗВЛЕЧЕНИЕ БЖУ из ответа длиной {len(response_text)} символов")
     logging.info(f"📊 Первые 500 символов ответа: {response_text[:500]}")
 
-    # Сначала пытаемся найти полный формат в одной строке
-    full_pattern = r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов'
-    full_match = re.search(full_pattern, response_text, re.IGNORECASE | re.DOTALL)
+    # КРИТИЧНО: Ищем секцию "ИТОГО" для извлечения финальных значений
+    itogo_match = re.search(r'ИТОГО:?\s*(.+?)(?=\n\n|\Z)', response_text, re.IGNORECASE | re.DOTALL)
+    
+    if itogo_match:
+        itogo_text = itogo_match.group(1)
+        logging.info(f"📊 Найдена секция ИТОГО: {itogo_text[:200]}")
+        
+        # Пытаемся извлечь полный формат из секции ИТОГО
+        full_pattern = r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров?.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов?'
+        full_match = re.search(full_pattern, itogo_text, re.IGNORECASE | re.DOTALL)
+        
+        if full_match:
+            logging.info(f"📊 Найден полный формат БЖУ в ИТОГО: {full_match.groups()}")
+            result = {
+                'calories': int(float(full_match.group(1).replace(',', '.'))),
+                'protein': float(full_match.group(2).replace(',', '.')),
+                'fat': float(full_match.group(3).replace(',', '.')),
+                'carbs': float(full_match.group(4).replace(',', '.'))
+            }
+            logging.info(f"📊 Результат из ИТОГО: {result}")
+            return result
+        else:
+            # Извлекаем из секции ИТОГО по отдельности
+            logging.info(f"📊 Извлекаем из ИТОГО по отдельности")
+            calories = extract_calories_smart(itogo_text)
+            protein = extract_protein_smart(itogo_text)
+            fat = extract_fat_smart(itogo_text)
+            carbs = extract_carbs_smart(itogo_text)
+            
+            if calories:  # Если хоть калории нашли в ИТОГО
+                logging.info(f"📊 Извлечено из ИТОГО: калории={calories}, белки={protein}, жиры={fat}, углеводы={carbs}")
+                result = {
+                    'calories': calories,
+                    'protein': protein,
+                    'fat': fat,
+                    'carbs': carbs
+                }
+                logging.info(f"📊 Финальный результат из ИТОГО: {result}")
+                return result
 
-    if full_match:
-        logging.info(f"📊 Найден полный формат БЖУ: {full_match.groups()}")
+    # Если секции ИТОГО нет, ищем полный формат по всему тексту
+    logging.info(f"📊 Секция ИТОГО не найдена, ищем полный формат по всему тексту")
+    full_pattern = r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров?.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов?'
+    
+    # Ищем ВСЕ вхождения полного формата
+    all_matches = list(re.finditer(full_pattern, response_text, re.IGNORECASE | re.DOTALL))
+    
+    if all_matches:
+        # Берем ПОСЛЕДНЕЕ вхождение (обычно это итоговое значение)
+        last_match = all_matches[-1]
+        logging.info(f"📊 Найдено {len(all_matches)} полных форматов, берем последний: {last_match.groups()}")
         result = {
-            'calories': float(full_match.group(1).replace(',', '.')),
-            'protein': float(full_match.group(2).replace(',', '.')),
-            'fat': float(full_match.group(3).replace(',', '.')),
-            'carbs': float(full_match.group(4).replace(',', '.'))
+            'calories': int(float(last_match.group(1).replace(',', '.'))),
+            'protein': float(last_match.group(2).replace(',', '.')),
+            'fat': float(last_match.group(3).replace(',', '.')),
+            'carbs': float(last_match.group(4).replace(',', '.'))
         }
-        logging.info(f"📊 Результат полного формата: {result}")
+        logging.info(f"📊 Результат последнего полного формата: {result}")
         return result
 
-    # Если не найден полный формат, извлекаем по отдельности
+    # Если полный формат не найден, извлекаем по отдельности
     logging.info(f"📊 Полный формат не найден, извлекаем по частям")
     calories = extract_calories_smart(response_text)
     protein = extract_protein_smart(response_text)
