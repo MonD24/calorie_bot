@@ -394,34 +394,81 @@ def extract_nutrition_smart(response_text: str) -> Dict[str, Optional[float]]:
     return result
 
 
-async def ask_gpt(messages: list) -> str:
-    """Отправляет запрос к OpenAI GPT"""
+async def ask_gpt(messages: list, max_retries: int = 3) -> str:
+    """
+    Отправляет запрос к OpenAI GPT с автоматическими повторными попытками при таймауте
+    
+    Args:
+        messages: Список сообщений для GPT
+        max_retries: Максимальное количество повторных попыток (по умолчанию 3)
+    
+    Returns:
+        str: Ответ от GPT
+    
+    Raises:
+        Exception: Если все попытки исчерпаны или произошла критическая ошибка
+    """
     if not OPENAI_AVAILABLE:
         raise Exception("OpenAI library not available")
 
-    try:
-        # Используем только новую версия OpenAI API (1.0+)
-        if 'client' not in globals() or client is None:
-            raise Exception("OpenAI client not initialized")
+    if 'client' not in globals() or client is None:
+        raise Exception("OpenAI client not initialized")
 
-        # Определяем модель: используем gpt-4o для vision задач, gpt-4o-mini для текста
-        has_image = any(
-            isinstance(msg.get('content'), list) and
-            any(item.get('type') == 'image_url' for item in msg.get('content', []))
-            for msg in messages
-        )
-        model = "gpt-4o" if has_image else "gpt-4o-mini"
+    # Определяем модель: используем gpt-4o для vision задач, gpt-4o-mini для текста
+    has_image = any(
+        isinstance(msg.get('content'), list) and
+        any(item.get('type') == 'image_url' for item in msg.get('content', []))
+        for msg in messages
+    )
+    model = "gpt-4o" if has_image else "gpt-4o-mini"
 
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=500,
-            temperature=0.1
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logging.error(f"OpenAI API error: {e}")
-        raise
+    # Повторные попытки с экспоненциальной задержкой
+    import asyncio
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"🔄 Попытка {attempt + 1}/{max_retries} отправки запроса к GPT ({model})")
+            
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=500,
+                temperature=0.1,
+                timeout=60.0  # Устанавливаем таймаут 60 секунд
+            )
+            
+            logging.info(f"✅ Успешный ответ от GPT на попытке {attempt + 1}")
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            error_type = type(e).__name__
+            error_msg = str(e)
+            
+            # Проверяем, является ли это ошибкой таймаута
+            is_timeout = ('timeout' in error_msg.lower() or 
+                         'timed out' in error_msg.lower() or
+                         error_type in ['Timeout', 'TimedOut', 'TimeoutError'])
+            
+            # Проверяем, является ли это ошибкой перегрузки сервера
+            is_overloaded = ('overloaded' in error_msg.lower() or
+                           'rate limit' in error_msg.lower() or
+                           error_type == 'RateLimitError')
+            
+            if attempt < max_retries - 1 and (is_timeout or is_overloaded):
+                # Экспоненциальная задержка: 2, 4, 8 секунд
+                wait_time = 2 ** (attempt + 1)
+                logging.warning(
+                    f"⚠️ {error_type}: {error_msg}. "
+                    f"Повторная попытка через {wait_time} сек... "
+                    f"(попытка {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                # Последняя попытка или критическая ошибка
+                logging.error(f"❌ OpenAI API error после {attempt + 1} попыток: {error_type} - {error_msg}")
+                raise
+    
+    # Если все попытки исчерпаны
+    raise Exception(f"Не удалось получить ответ от GPT после {max_retries} попыток")
 
 
 def get_calories_left_message(profile: Dict[str, Any], diary: Dict[str, int],
