@@ -24,20 +24,38 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
 
     logging.info(f"🔧 Извлеченные значения: калории={calories}, белки={protein}, жиры={fat}, углеводы={carbs}")
 
-    # Проверяем соотношение БЖУ и калорий
+    # КРИТИЧЕСКАЯ ПРОВЕРКА: Соотношение БЖУ и калорий
     if all(x is not None for x in [calories, protein, fat, carbs]):
         # Калории из БЖУ: белки и углеводы = 4 ккал/г, жиры = 9 ккал/г
         calculated_calories = protein * 4 + fat * 9 + carbs * 4
+        
+        logging.info(f"🔧 ПРОВЕРКА СООТВЕТСТВИЯ БЖУ:")
+        logging.info(f"   Белки: {protein}г × 4 = {protein * 4:.0f} ккал")
+        logging.info(f"   Жиры: {fat}г × 9 = {fat * 9:.0f} ккал")
+        logging.info(f"   Углеводы: {carbs}г × 4 = {carbs * 4:.0f} ккал")
+        logging.info(f"   ИТОГО по БЖУ: {calculated_calories:.0f} ккал")
+        logging.info(f"   Заявлено калорий: {calories} ккал")
+        if calculated_calories > 0:
+            logging.info(f"   Расхождение: {abs(calories - calculated_calories):.0f} ккал ({abs(calories - calculated_calories) / calculated_calories * 100:.1f}%)")
+        else:
+            logging.info(f"   Расхождение: {abs(calories - calculated_calories):.0f} ккал (calculated_calories = 0)")
 
         # Допустимое отклонение 30%
-        # Защита от деления на ноль
         if calculated_calories > 0 and abs(calories - calculated_calories) / calculated_calories > 0.3:
-            warnings.append(f"Несоответствие калорий: заявлено {calories}, по БЖУ {calculated_calories:.0f}")
-
-            # Если расхождение критическое, используем расчет по БЖУ
-            if calories < calculated_calories * 0.6:
+            warnings.append(f"⚠️ КРИТИЧЕСКОЕ несоответствие: заявлено {calories} ккал, но по БЖУ выходит {calculated_calories:.0f} ккал")
+            
+            # Если расхождение критическое (более 40%), используем расчет по БЖУ
+            # 40% выбрано потому что GPT часто ошибается на 40-50% при сложных блюдах
+            if abs(calories - calculated_calories) / calculated_calories > 0.4:
+                logging.info(f"🔧 КРИТИЧЕСКОЕ РАСХОЖДЕНИЕ! Используем калории по БЖУ: {calories} -> {int(calculated_calories)}")
                 validated['calories'] = int(calculated_calories)
-                warnings.append(f"Калории исправлены на {int(calculated_calories)}")
+                warnings.append(f"✅ Калории автоматически пересчитаны по БЖУ: {int(calculated_calories)} ккал")
+            else:
+                # Среднее между заявленным и расчетным (расхождение 30-40%)
+                avg_calories = int((calories + calculated_calories) / 2)
+                logging.info(f"🔧 СРЕДНЕЕ РАСХОЖДЕНИЕ. Используем среднее: ({calories} + {calculated_calories:.0f}) / 2 = {avg_calories}")
+                validated['calories'] = avg_calories
+                warnings.append(f"✅ Калории скорректированы (среднее между заявленным и расчетным): {avg_calories} ккал")
 
     # Проверяем на типичные ошибки GPT
     description_lower = description.lower()
