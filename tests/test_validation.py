@@ -28,6 +28,21 @@ class TestNutritionValidation:
         # Калории должны быть пересчитаны: 32.5*4 + 26.4*9 + 29.2*4 ≈ 484
         assert validated['calories'] > 400
         assert validated['protein'] == 32.5  # Остальные значения не меняются
+    
+    def test_tuna_salad_calorie_correction(self):
+        """Тест коррекции калорий для салата с тунцом (реальный кейс)"""
+        # Реальные данные от GPT: калории занижены, БЖУ правильные
+        nutrition = {"calories": 300, "protein": 31.9, "fat": 38.9, "carbs": 18.0}
+        validated = validate_nutrition_data(nutrition, "салат с тунцом: консервированный тунец в масле, огурцы, сухарики, вареное яйцо, майонез")
+        
+        # По БЖУ: 31.9*4 + 38.9*9 + 18.0*4 = 550 ккал
+        # Калории должны быть исправлены на основе БЖУ
+        assert validated['calories'] >= 500, f"Expected >= 500 kcal, got {validated['calories']}"
+        assert validated['calories'] <= 600, f"Expected <= 600 kcal, got {validated['calories']}"
+        # БЖУ не должны измениться
+        assert validated['protein'] == 31.9
+        assert validated['fat'] == 38.9
+        assert validated['carbs'] == 18.0
         
     def test_no_correction_for_valid_data(self):
         """Тест что корректные данные не изменяются"""
@@ -104,6 +119,7 @@ def run_tests():
     
     tests = [
         (test_validation.test_calorie_correction_from_bju, "Коррекция калорий"),
+        (test_validation.test_tuna_salad_calorie_correction, "Салат с тунцом (реальный кейс)"),
         (test_validation.test_no_correction_for_valid_data, "Валидные данные"),
         (test_validation.test_minimum_values_correction, "Минимальные значения"),
         (test_validation.test_portion_estimation, "Оценка порций"),

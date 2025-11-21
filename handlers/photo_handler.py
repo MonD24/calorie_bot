@@ -52,8 +52,17 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         result = await analyze_food_photo(img_b64)
 
         if 'error' in result:
+            error_msg = result["error"]
+            # Добавляем отладочную информацию если есть
+            if 'debug_response' in result:
+                logging.error(f"Debug response: {result['debug_response']}")
+            
             await analyzing_msg.edit_text(
-                f'❌ {result["error"]}\n\nОпишите блюдо текстом для расчета калорий.'
+                f'❌ {error_msg}\n\n'
+                f'💡 Попробуйте:\n'
+                f'• Описать блюдо текстом (например: "куриная грудка с рисом 250г")\n'
+                f'• Переснять фото с лучшим освещением\n'
+                f'• Убрать посторонние предметы с фото'
             )
             return
 
