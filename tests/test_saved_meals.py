@@ -1,0 +1,170 @@
+# -*- coding: utf-8 -*-
+"""
+Тесты для функциональности сохраненных блюд
+"""
+import pytest
+import os
+import json
+import tempfile
+import shutil
+
+# Настраиваем путь до импортов
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Мокаем DATA_DIR до импорта user_data
+import config
+
+
+class TestSavedMeals:
+    """Тесты для сохраненных блюд"""
+    
+    @pytest.fixture(autouse=True)
+    def setup_temp_dir(self, tmp_path, monkeypatch):
+        """Создаем временную директорию для тестов"""
+        self.temp_dir = tmp_path / "test_data"
+        self.temp_dir.mkdir()
+        monkeypatch.setattr(config, 'DATA_DIR', str(self.temp_dir))
+        
+        # Импортируем после мока
+        from utils.user_data import (
+            get_user_saved_meals, save_user_saved_meals, 
+            add_saved_meal, remove_saved_meal, get_user_files
+        )
+        self.get_user_saved_meals = get_user_saved_meals
+        self.save_user_saved_meals = save_user_saved_meals
+        self.add_saved_meal = add_saved_meal
+        self.remove_saved_meal = remove_saved_meal
+        self.get_user_files = get_user_files
+    
+    def test_get_empty_saved_meals(self):
+        """Тест получения пустого списка блюд"""
+        meals = self.get_user_saved_meals("test_user_1")
+        assert meals == {}
+    
+    def test_add_saved_meal(self):
+        """Тест добавления блюда"""
+        user_id = "test_user_2"
+        meal_name = "Творог с арбузом"
+        meal_data = {
+            'calories': 300,
+            'protein': 25.0,
+            'fat': 8.0,
+            'carbs': 30.0
+        }
+        
+        result = self.add_saved_meal(user_id, meal_name, meal_data)
+        assert result is True
+        
+        # Проверяем что блюдо сохранилось
+        saved_meals = self.get_user_saved_meals(user_id)
+        assert len(saved_meals) == 1
+        
+        meal_key = meal_name.lower().strip()
+        assert meal_key in saved_meals
+        assert saved_meals[meal_key]['name'] == meal_name
+        assert saved_meals[meal_key]['calories'] == 300
+        assert saved_meals[meal_key]['protein'] == 25.0
+    
+    def test_add_multiple_meals(self):
+        """Тест добавления нескольких блюд"""
+        user_id = "test_user_3"
+        
+        meals_to_add = [
+            ("Фрукты на вечер", {'calories': 150, 'protein': 1.0, 'fat': 0.5, 'carbs': 35.0}),
+            ("Творог с пастой", {'calories': 450, 'protein': 30.0, 'fat': 20.0, 'carbs': 25.0}),
+            ("Овсянка на молоке", {'calories': 250, 'protein': 10.0, 'fat': 5.0, 'carbs': 40.0}),
+        ]
+        
+        for meal_name, meal_data in meals_to_add:
+            self.add_saved_meal(user_id, meal_name, meal_data)
+        
+        saved_meals = self.get_user_saved_meals(user_id)
+        assert len(saved_meals) == 3
+    
+    def test_remove_saved_meal(self):
+        """Тест удаления блюда"""
+        user_id = "test_user_4"
+        meal_name = "Тестовое блюдо"
+        
+        self.add_saved_meal(user_id, meal_name, {'calories': 100})
+        
+        # Проверяем что блюдо добавилось
+        saved_meals = self.get_user_saved_meals(user_id)
+        assert len(saved_meals) == 1
+        
+        # Удаляем блюдо
+        meal_key = meal_name.lower().strip()
+        result = self.remove_saved_meal(user_id, meal_key)
+        assert result is True
+        
+        # Проверяем что блюдо удалилось
+        saved_meals = self.get_user_saved_meals(user_id)
+        assert len(saved_meals) == 0
+    
+    def test_remove_nonexistent_meal(self):
+        """Тест удаления несуществующего блюда"""
+        user_id = "test_user_5"
+        result = self.remove_saved_meal(user_id, "nonexistent_meal")
+        assert result is False
+    
+    def test_meal_data_validation(self):
+        """Тест сохранения блюда с частичными данными"""
+        user_id = "test_user_6"
+        meal_name = "Блюдо без БЖУ"
+        
+        # Сохраняем блюдо только с калориями
+        self.add_saved_meal(user_id, meal_name, {'calories': 200})
+        
+        saved_meals = self.get_user_saved_meals(user_id)
+        meal_key = meal_name.lower().strip()
+        
+        assert saved_meals[meal_key]['calories'] == 200
+        assert saved_meals[meal_key]['protein'] is None
+        assert saved_meals[meal_key]['fat'] is None
+        assert saved_meals[meal_key]['carbs'] is None
+
+
+class TestSaladCalorieValidation:
+    """Тесты для валидации калорийности салатов"""
+    
+    def test_greek_salad_validation(self):
+        """Тест что греческий салат не получает слишком низкую калорийность"""
+        from utils.nutrition_validator import validate_nutrition_data
+        
+        # Симулируем ситуацию когда GPT занизил калории
+        nutrition = {
+            'calories': 150,  # Слишком мало для греческого салата
+            'protein': 7.0,
+            'fat': 10.0,  # Слишком мало жиров
+            'carbs': 12.0
+        }
+        
+        result = validate_nutrition_data(nutrition, "греческий салат с сыром фета и майонезом")
+        
+        # Калории должны быть увеличены
+        assert result['calories'] >= 350
+        # Жиры тоже должны быть увеличены
+        assert result['fat'] >= 15
+    
+    def test_salad_with_dressing_validation(self):
+        """Тест валидации салата с заправкой"""
+        from utils.nutrition_validator import validate_nutrition_data
+        
+        nutrition = {
+            'calories': 100,  # Слишком мало
+            'protein': 2.0,
+            'fat': 5.0,  # Слишком мало для салата с майонезом
+            'carbs': 8.0
+        }
+        
+        result = validate_nutrition_data(nutrition, "овощной салат с майонезом")
+        
+        # Калории должны быть увеличены
+        assert result['calories'] >= 280
+        # Жиры должны быть увеличены для салата с майонезом
+        assert result['fat'] >= 18
+
+
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])

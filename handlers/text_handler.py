@@ -18,7 +18,8 @@ import openai_safe
 from utils.user_data import (
     get_user_profile, save_user_profile, get_user_diary,
     save_user_diary, get_user_weights, save_user_weights,
-    get_user_food_log, save_user_food_log, get_user_burned, save_user_burned
+    get_user_food_log, save_user_food_log, get_user_burned, save_user_burned,
+    add_saved_meal
 )
 from utils.calorie_calculator import (
     create_calorie_prompt, ask_gpt, extract_nutrition_smart,
@@ -72,6 +73,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     elif step == 'burn_calories':
         await handle_burn_calories(update, context, text, user_id, today)
+        return
+    elif step == 'save_meal_nutrition':
+        await handle_save_meal_nutrition(update, context, text, user_id)
         return
 
     # === ОБРАБОТКА ЕДЫ ===
@@ -197,6 +201,71 @@ async def handle_burn_calories(update, context, text, user_id, today):
             await update.message.reply_text('Введите количество калорий от 0 до 5000')
     except ValueError:
         await update.message.reply_text('Введите количество потраченных калорий числом, например: 300')
+
+
+async def handle_save_meal_nutrition(update, context, text, user_id):
+    """Обработка ввода БЖУ для сохранения нового блюда"""
+    meal_name = context.user_data.get('pending_save_meal')
+    
+    if not meal_name:
+        await update.message.reply_text('❌ Ошибка: название блюда не найдено. Используйте /savemeal [название]')
+        context.user_data['step'] = None
+        return
+    
+    try:
+        # Парсим ввод: может быть "калории" или "калории белки жиры углеводы"
+        parts = text.strip().split()
+        
+        calories = int(parts[0])
+        protein = float(parts[1]) if len(parts) > 1 else None
+        fat = float(parts[2]) if len(parts) > 2 else None
+        carbs = float(parts[3]) if len(parts) > 3 else None
+        
+        if not (1 <= calories <= 5000):
+            await update.message.reply_text('❌ Калорийность должна быть от 1 до 5000 ккал')
+            return
+        
+        # Сохраняем блюдо
+        meal_data = {
+            'calories': calories,
+            'protein': protein,
+            'fat': fat,
+            'carbs': carbs
+        }
+        
+        add_saved_meal(user_id, meal_name, meal_data)
+        
+        # Формируем сообщение
+        nutrition_parts = [f'{calories} ккал']
+        if protein:
+            nutrition_parts.append(f'{protein:.1f}г белка')
+        if fat:
+            nutrition_parts.append(f'{fat:.1f}г жиров')
+        if carbs:
+            nutrition_parts.append(f'{carbs:.1f}г углеводов')
+        
+        await update.message.reply_text(
+            f'⭐ Блюдо сохранено!\n\n'
+            f'📝 *{meal_name}*\n'
+            f'🔥 {", ".join(nutrition_parts)}\n\n'
+            f'Теперь вы можете быстро добавить его через /meals',
+            parse_mode='Markdown'
+        )
+        
+        # Очищаем состояние
+        context.user_data['step'] = None
+        context.user_data.pop('pending_save_meal', None)
+        
+    except (ValueError, IndexError):
+        await update.message.reply_text(
+            '❌ Неверный формат!\n\n'
+            'Введите данные в формате:\n'
+            '`калории` или `калории белки жиры углеводы`\n\n'
+            'Примеры:\n'
+            '• `350` - только калории\n'
+            '• `350 25 15 20` - калории, белки, жиры, углеводы',
+            parse_mode='Markdown'
+        )
 
 
 def parse_manual_calories(text):
