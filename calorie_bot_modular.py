@@ -21,7 +21,8 @@ from handlers.commands import (
     start_command, help_command, goal_command, 
     weight_command, burn_command, left_command,
     clear_today_command, reset_command, limit_command, food_log_command,
-    macros_command, evening_summary_function, morning_weight_function
+    macros_command, evening_summary_function, morning_weight_function,
+    meals_command, savemeal_command, deletemeal_command
 )
 from handlers.text_handler import handle_text_message
 from handlers.photo_handler import handle_photo_message
@@ -117,6 +118,9 @@ def main():
         application.add_handler(CommandHandler("limit", limit_command))
         application.add_handler(CommandHandler("food", food_log_command))
         application.add_handler(CommandHandler("macros", macros_command))
+        application.add_handler(CommandHandler("meals", meals_command))
+        application.add_handler(CommandHandler("savemeal", savemeal_command))
+        application.add_handler(CommandHandler("deletemeal", deletemeal_command))
         
         # Добавляем обработчики сообщений
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))

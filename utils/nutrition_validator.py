@@ -154,6 +154,67 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
     if 'банан' in description_lower and calories and calories < 50:
         warnings.append("Подозрительно низкая калорийность для блюда с бананом")
 
+    # СПЕЦИАЛЬНАЯ ПРОВЕРКА для салатов с заправкой (майонез, сметана, масло, фета)
+    is_salad = 'салат' in description_lower
+    has_dressing = any(word in description_lower for word in ['майонез', 'сметан', 'масл', 'заправк', 'фета'])
+    has_olives = any(word in description_lower for word in ['оливк', 'маслин'])
+    has_cheese = any(word in description_lower for word in ['фета', 'сыр', 'брынз'])
+    
+    if is_salad:
+        logging.info(f"🥗 САЛАТ: заправка={has_dressing}, оливки={has_olives}, сыр={has_cheese}")
+        
+        # Греческий салат или салат с фетой и заправкой
+        if has_cheese and (has_dressing or has_olives):
+            min_calories_salad = 350
+            if calories and calories < min_calories_salad:
+                warnings.append(f"КРИТИЧЕСКИ мало калорий ({calories}) для салата с сыром и заправкой")
+                validated['calories'] = max(validated['calories'] or 0, min_calories_salad)
+                logging.info(f"🥗 КОРРЕКЦИЯ САЛАТА: калории -> {min_calories_salad}")
+            
+            # Проверяем жиры - в салате с фетой и заправкой должно быть много жиров
+            if fat is not None and fat < 15:
+                warnings.append(f"КРИТИЧЕСКИ мало жиров ({fat}г) для салата с сыром и заправкой")
+                validated['fat'] = max(fat, 18.0)
+                logging.info(f"🥗 КОРРЕКЦИЯ САЛАТА: жиры -> {validated['fat']}г")
+        
+        # Любой салат с заправкой
+        elif has_dressing:
+            min_calories_salad = 280
+            if calories and calories < min_calories_salad:
+                warnings.append(f"Подозрительно мало калорий ({calories}) для салата с заправкой")
+                validated['calories'] = max(validated['calories'] or 0, min_calories_salad)
+                logging.info(f"🥗 КОРРЕКЦИЯ САЛАТА с заправкой: калории -> {min_calories_salad}")
+            
+            # Салат с майонезом - минимум 20г жиров
+            if 'майонез' in description_lower and fat is not None and fat < 18:
+                validated['fat'] = max(fat, 20.0)
+                logging.info(f"🥗 КОРРЕКЦИЯ: жиры с майонезом -> {validated['fat']}г")
+        
+        # Даже простой салат с овощами - не менее 100 ккал (порция ~200-300г)
+        elif calories and calories < 100:
+            validated['calories'] = max(validated['calories'] or 0, 120)
+            warnings.append(f"Калории салата увеличены до {validated['calories']}")
+
+    # ПРОВЕРКА для макарон/гарнира с мясом и салатом
+    has_pasta = any(word in description_lower for word in ['макарон', 'паста'])
+    has_meat = any(word in description_lower for word in ['мяс', 'котлет', 'фарш'])
+    has_korean_carrot = 'по-корейски' in description_lower or 'корейск' in description_lower
+    
+    if has_pasta and has_meat:
+        min_calories_pasta = 450
+        if calories and calories < min_calories_pasta:
+            warnings.append(f"Мало калорий ({calories}) для макарон с мясом")
+            validated['calories'] = max(validated['calories'] or 0, min_calories_pasta)
+            logging.info(f"🍝 КОРРЕКЦИЯ МАКАРОН с мясом: калории -> {min_calories_pasta}")
+    
+    if has_korean_carrot:
+        # Морковь по-корейски - высококалорийная из-за масла (~134 ккал/100г)
+        logging.info(f"🥕 Обнаружена морковь по-корейски")
+        # Увеличиваем жиры если они слишком низкие
+        if fat is not None and fat < 8:
+            validated['fat'] = max(fat, 10.0)
+            logging.info(f"🥕 КОРРЕКЦИЯ жиров для моркови по-корейски: -> {validated['fat']}г")
+
     # Проверяем базовые пределы
     if protein is not None and protein < 0.5:
         validated['protein'] = 0.5

@@ -26,7 +26,8 @@ def get_user_files(user_id: str) -> Dict[str, str]:
         'diary': os.path.join(user_dir, 'diary.json'),
         'weights': os.path.join(user_dir, 'weights.json'),
         'food_log': os.path.join(user_dir, 'food_log.json'),
-        'burned': os.path.join(user_dir, 'burned.json')
+        'burned': os.path.join(user_dir, 'burned.json'),
+        'saved_meals': os.path.join(user_dir, 'saved_meals.json')
     }
 
 
@@ -269,6 +270,56 @@ def save_user_burned(user_id: str, burned: Dict[str, int]) -> None:
     user_data = load_user_data(user_id)
     user_data['burned'] = burned
     save_user_data(user_id, user_data)
+
+
+def get_user_saved_meals(user_id: str) -> Dict[str, Dict[str, Any]]:
+    """Получаем сохраненные блюда пользователя"""
+    user_data = load_user_data(user_id)
+    return user_data.get('saved_meals', {})
+
+
+def save_user_saved_meals(user_id: str, saved_meals: Dict[str, Dict[str, Any]]) -> None:
+    """Сохраняем избранные блюда пользователя"""
+    user_data = load_user_data(user_id)
+    user_data['saved_meals'] = saved_meals
+    save_user_data(user_id, user_data)
+
+
+def add_saved_meal(user_id: str, meal_name: str, meal_data: Dict[str, Any]) -> bool:
+    """Добавляет блюдо в сохраненные
+    
+    meal_data должен содержать:
+    - calories: int
+    - protein: float (опционально)
+    - fat: float (опционально)
+    - carbs: float (опционально)
+    """
+    saved_meals = get_user_saved_meals(user_id)
+    
+    # Генерируем уникальный ключ из названия
+    meal_key = meal_name.lower().strip()
+    
+    saved_meals[meal_key] = {
+        'name': meal_name,
+        'calories': meal_data.get('calories', 0),
+        'protein': meal_data.get('protein'),
+        'fat': meal_data.get('fat'),
+        'carbs': meal_data.get('carbs')
+    }
+    
+    save_user_saved_meals(user_id, saved_meals)
+    return True
+
+
+def remove_saved_meal(user_id: str, meal_key: str) -> bool:
+    """Удаляет блюдо из сохраненных"""
+    saved_meals = get_user_saved_meals(user_id)
+    
+    if meal_key in saved_meals:
+        del saved_meals[meal_key]
+        save_user_saved_meals(user_id, saved_meals)
+        return True
+    return False
 
 
 def get_all_users() -> list:

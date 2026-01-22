@@ -16,7 +16,8 @@ from utils.user_data import (
     get_user_profile, save_user_profile, get_user_diary,
     save_user_diary, get_user_weights, save_user_weights,
     get_user_food_log, save_user_food_log, get_user_burned,
-    save_user_burned, load_user_data, save_user_data
+    save_user_burned, load_user_data, save_user_data,
+    get_user_saved_meals, save_user_saved_meals, remove_saved_meal
 )
 from utils.calorie_calculator import calculate_bmr_tdee, get_calories_left_message
 
@@ -62,6 +63,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif query.data == 'edit_photo':
         await handle_edit_photo(query, context, user_id)
+
+    elif query.data.startswith('add_meal_'):
+        await handle_add_saved_meal(query, context, user_id, query.data, today)
+
+    elif query.data.startswith('delete_meal_'):
+        await handle_delete_saved_meal(query, user_id, query.data)
+
+    elif query.data == 'cancel_meals':
+        await handle_cancel_meals(query)
 
 
 async def handle_check_left(query, user_id, today):
@@ -275,6 +285,90 @@ async def handle_edit_photo(query, context, user_id):
             f'Тип ошибки: {type(e).__name__}\n'
             f'Попробуйте ещё раз или обратитесь к разработчику.'
         )
+
+
+async def handle_add_saved_meal(query, context, user_id, meal_data, today):
+    """Добавление сохраненного блюда в дневник"""
+    meal_key = meal_data.replace('add_meal_', '')
+    saved_meals = get_user_saved_meals(user_id)
+    
+    if meal_key not in saved_meals:
+        try:
+            await query.edit_message_text('❌ Блюдо не найдено.')
+        except:
+            await query.message.reply_text('❌ Блюдо не найдено.')
+        return
+    
+    meal = saved_meals[meal_key]
+    name = meal.get('name', meal_key)
+    calories = meal.get('calories', 0)
+    protein = meal.get('protein')
+    fat = meal.get('fat')
+    carbs = meal.get('carbs')
+    
+    # Добавляем в дневник
+    diary = get_user_diary(user_id)
+    food_log = get_user_food_log(user_id)
+    
+    diary[today] = diary.get(today, 0) + calories
+    save_user_diary(user_id, diary)
+    
+    if today not in food_log:
+        food_log[today] = []
+    food_log[today].append([name, calories, protein, fat, carbs])
+    save_user_food_log(user_id, food_log)
+    
+    # Рассчитываем остаток
+    profile = get_user_profile(user_id)
+    burned = get_user_burned(user_id)
+    left_message = get_calories_left_message(profile, diary, burned, today)
+    
+    # Формируем сообщение
+    nutrition_parts = [f'{calories} ккал']
+    if protein:
+        nutrition_parts.append(f'{protein:.1f}г белка')
+    if fat:
+        nutrition_parts.append(f'{fat:.1f}г жиров')
+    if carbs:
+        nutrition_parts.append(f'{carbs:.1f}г углеводов')
+    
+    try:
+        await query.edit_message_text(
+            f'✅ Добавлено: {name}, {", ".join(nutrition_parts)}.\n\n{left_message}'
+        )
+    except:
+        await query.message.reply_text(
+            f'✅ Добавлено: {name}, {", ".join(nutrition_parts)}.\n\n{left_message}'
+        )
+
+
+async def handle_delete_saved_meal(query, user_id, meal_data):
+    """Удаление сохраненного блюда"""
+    meal_key = meal_data.replace('delete_meal_', '')
+    saved_meals = get_user_saved_meals(user_id)
+    
+    if meal_key in saved_meals:
+        meal_name = saved_meals[meal_key].get('name', meal_key)
+        remove_saved_meal(user_id, meal_key)
+        
+        try:
+            await query.edit_message_text(f'🗑️ Блюдо "{meal_name}" удалено.')
+        except:
+            await query.message.reply_text(f'🗑️ Блюдо "{meal_name}" удалено.')
+    else:
+        try:
+            await query.edit_message_text('❌ Блюдо не найдено.')
+        except:
+            await query.message.reply_text('❌ Блюдо не найдено.')
+
+
+async def handle_cancel_meals(query):
+    """Отмена выбора блюда"""
+    try:
+        await query.edit_message_text('❌ Отменено.')
+    except:
+        await query.message.reply_text('❌ Отменено.')
+
 
 # Алиас для совместимости
 handle_callback = handle_callback_query

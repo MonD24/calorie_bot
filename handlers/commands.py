@@ -18,7 +18,8 @@ import openai_safe
 
 from utils.user_data import (
     get_user_profile, save_user_profile, get_user_diary, save_user_diary,
-    get_user_burned, get_user_food_log, save_user_food_log, save_user_burned
+    get_user_burned, get_user_food_log, save_user_food_log, save_user_burned,
+    get_user_saved_meals, save_user_saved_meals, add_saved_meal, remove_saved_meal
 )
 from utils.calorie_calculator import calculate_bmr_tdee, get_calories_left_message, get_macro_analysis_command
 from config import VALIDATION_LIMITS
@@ -185,9 +186,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /clear_today - Очистить записи за сегодня
 /reset - Сбросить профиль (начать заново)
 
+⭐ *Сохраненные блюда:*
+/meals - Показать список сохраненных блюд
+/savemeal - Сохранить последнее добавленное блюдо
+/deletemeal - Удалить сохраненное блюдо
+
 🍽️ *Как добавлять еду:*
 • Отправьте фото блюда для автоматического анализа БЖУ
 • Напишите текстом что едите, например: "творог с арбузом"
+• Используйте /meals чтобы быстро выбрать сохраненное блюдо
 • Бот автоматически рассчитает калории, белки, жиры и углеводы
 
 🧠 *Анализ питания:*
@@ -504,3 +511,138 @@ async def macros_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f'❌ Ошибка при анализе питания: {str(e)}\n\n'
             f'Убедитесь, что у вас заполнен профиль (/start) и есть записи в дневнике.'
         )
+
+
+async def meals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /meals - показать сохраненные блюда"""
+    user_id = str(update.effective_user.id)
+    saved_meals = get_user_saved_meals(user_id)
+    
+    if not saved_meals:
+        await update.message.reply_text(
+            '📭 У вас пока нет сохраненных блюд.\n\n'
+            '💡 Чтобы сохранить блюдо:\n'
+            '1. Добавьте еду (фото или текст)\n'
+            '2. Используйте /savemeal [название]\n\n'
+            'Или создайте новое: /savemeal творог с арбузом'
+        )
+        return
+    
+    # Создаем клавиатуру с сохраненными блюдами
+    keyboard = []
+    for meal_key, meal_data in saved_meals.items():
+        name = meal_data.get('name', meal_key)
+        calories = meal_data.get('calories', 0)
+        protein = meal_data.get('protein')
+        
+        # Формируем текст кнопки
+        btn_text = f"🍽️ {name} ({calories} ккал"
+        if protein:
+            btn_text += f", {protein:.0f}г белка"
+        btn_text += ")"
+        
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f'add_meal_{meal_key}')])
+    
+    # Добавляем кнопку отмены
+    keyboard.append([InlineKeyboardButton('❌ Отмена', callback_data='cancel_meals')])
+    
+    await update.message.reply_text(
+        '⭐ *Ваши сохраненные блюда:*\n\nВыберите блюдо для добавления в дневник:',
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def savemeal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /savemeal - сохранить блюдо"""
+    user_id = str(update.effective_user.id)
+    
+    # Проверяем, есть ли аргументы (название блюда)
+    if context.args:
+        # Пользователь хочет создать новое блюдо с указанием названия
+        meal_name = ' '.join(context.args)
+        context.user_data['pending_save_meal'] = meal_name
+        await update.message.reply_text(
+            f'🍽️ Создание блюда: *{meal_name}*\n\n'
+            f'Введите калорийность и БЖУ в формате:\n'
+            f'`калории белки жиры углеводы`\n\n'
+            f'Например: `350 25 15 20`\n'
+            f'Или только калории: `350`',
+            parse_mode='Markdown'
+        )
+        context.user_data['step'] = 'save_meal_nutrition'
+        return
+    
+    # Пытаемся сохранить последнее добавленное блюдо
+    food_log = get_user_food_log(user_id)
+    today = datetime.date.today().isoformat()
+    today_foods = food_log.get(today, [])
+    
+    if not today_foods:
+        await update.message.reply_text(
+            '❌ Сегодня нет записей в дневнике.\n\n'
+            '💡 Чтобы сохранить блюдо:\n'
+            '1. Сначала добавьте еду (фото или текст)\n'
+            '2. Затем используйте /savemeal\n\n'
+            'Или создайте новое: /savemeal творог с арбузом'
+        )
+        return
+    
+    # Берем последнее блюдо
+    last_food = today_foods[-1]
+    meal_name = last_food[0]
+    calories = last_food[1] if len(last_food) > 1 else 0
+    protein = last_food[2] if len(last_food) > 2 else None
+    fat = last_food[3] if len(last_food) > 3 else None
+    carbs = last_food[4] if len(last_food) > 4 else None
+    
+    # Сохраняем блюдо
+    meal_data = {
+        'calories': calories,
+        'protein': protein,
+        'fat': fat,
+        'carbs': carbs
+    }
+    
+    add_saved_meal(user_id, meal_name, meal_data)
+    
+    # Формируем сообщение
+    nutrition_parts = [f'{calories} ккал']
+    if protein:
+        nutrition_parts.append(f'{protein:.1f}г белка')
+    if fat:
+        nutrition_parts.append(f'{fat:.1f}г жиров')
+    if carbs:
+        nutrition_parts.append(f'{carbs:.1f}г углеводов')
+    
+    await update.message.reply_text(
+        f'⭐ Блюдо сохранено!\n\n'
+        f'📝 *{meal_name}*\n'
+        f'🔥 {", ".join(nutrition_parts)}\n\n'
+        f'Теперь вы можете быстро добавить его через /meals',
+        parse_mode='Markdown'
+    )
+
+
+async def deletemeal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /deletemeal - удалить сохраненное блюдо"""
+    user_id = str(update.effective_user.id)
+    saved_meals = get_user_saved_meals(user_id)
+    
+    if not saved_meals:
+        await update.message.reply_text('📭 У вас нет сохраненных блюд.')
+        return
+    
+    # Создаем клавиатуру для выбора блюда на удаление
+    keyboard = []
+    for meal_key, meal_data in saved_meals.items():
+        name = meal_data.get('name', meal_key)
+        keyboard.append([InlineKeyboardButton(f'🗑️ {name}', callback_data=f'delete_meal_{meal_key}')])
+    
+    keyboard.append([InlineKeyboardButton('❌ Отмена', callback_data='cancel_meals')])
+    
+    await update.message.reply_text(
+        '🗑️ *Удаление сохраненного блюда*\n\nВыберите блюдо для удаления:',
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
