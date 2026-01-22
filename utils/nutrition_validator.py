@@ -60,6 +60,42 @@ def validate_nutrition_data(nutrition: Dict[str, Any], description: str) -> Dict
     # Проверяем на типичные ошибки GPT
     description_lower = description.lower()
 
+    # НОВАЯ ПРОВЕРКА: Несколько блюд/тарелок на фото
+    is_multiple_dishes = any(phrase in description_lower for phrase in [
+        'два блюда', 'две тарелки', 'три блюда', '2 блюда', '2 тарелки',
+        'первое блюдо', 'второе блюдо', 'блюдо 1', 'блюдо 2',
+        '1)', '2)', 'макароны с котлетами', 'морковь по-корейски'
+    ])
+    
+    has_pasta_with_cutlets = any(word in description_lower for word in ['макарон', 'котлет'])
+    has_korean_carrot = 'по-корейски' in description_lower or 'корейск' in description_lower
+    has_fish = any(word in description_lower for word in ['рыб', 'селед', 'скумбри'])
+    
+    # Если описание указывает на несколько блюд
+    if is_multiple_dishes or (has_pasta_with_cutlets and has_korean_carrot):
+        logging.info(f"🍽️ НЕСКОЛЬКО БЛЮД на фото! Проверяем калорийность")
+        
+        # Минимум для двух блюд: макароны с котлетами (~500) + морковь с рыбой (~350) = 850+
+        min_calories_multiple = 700
+        
+        if has_pasta_with_cutlets:
+            min_calories_multiple += 200  # Макароны с котлетами = минимум 500 ккал
+        if has_korean_carrot:
+            min_calories_multiple += 100  # Морковь по-корейски = минимум 150 ккал
+        if has_fish:
+            min_calories_multiple += 150  # Рыба = минимум 200 ккал
+        
+        if validated['calories'] and validated['calories'] < min_calories_multiple:
+            warnings.append(f"КРИТИЧЕСКИ мало калорий ({validated['calories']}) для нескольких блюд")
+            validated['calories'] = max(validated['calories'], min_calories_multiple)
+            logging.info(f"🍽️ ИСПРАВЛЕНИЕ: калории для нескольких блюд -> {validated['calories']}")
+    
+    # Отдельная проверка для макарон с котлетами (даже если одна тарелка)
+    if has_pasta_with_cutlets and validated['calories'] and validated['calories'] < 450:
+        logging.info(f"🍝 Макароны с котлетами - минимум 500 ккал")
+        validated['calories'] = max(validated['calories'], 500)
+        warnings.append(f"Калории исправлены до {validated['calories']} для макарон с котлетами")
+
     # Определяем ключевые ингредиенты для проверок
     has_chicken = any(word in description_lower for word in ['курица', 'куриная'])
     has_grain = any(word in description_lower for word in ['рис', 'булгур', 'гречка', 'макароны'])
