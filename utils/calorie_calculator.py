@@ -327,44 +327,59 @@ def extract_nutrition_smart(response_text: str) -> Dict[str, Optional[float]]:
         logging.info(f"📊 Найдена секция ИТОГО: {itogo_text[:200]}")
         
         # Пытаемся извлечь полный формат из секции ИТОГО
-        full_pattern = r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров?.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов?'
-        full_match = re.search(full_pattern, itogo_text, re.IGNORECASE | re.DOTALL)
+        # ИСПРАВЛЕНО: учитываем что между числом и "г" может не быть пробела (13.5г белка)
+        full_patterns = [
+            # Формат: 1016 ккал, 13.5г белка, 72г жира, 47г углеводов
+            r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)г?\s*белка.*?(\d+(?:[.,]\d+)?)г?\s*жир.*?(\d+(?:[.,]\d+)?)г?\s*углевод',
+            # Формат с пробелами: 1016 ккал, 13.5 г белка, 72 г жиров, 47 г углеводов
+            r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров?.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов?',
+        ]
         
-        if full_match:
-            logging.info(f"📊 Найден полный формат БЖУ в ИТОГО: {full_match.groups()}")
-            result = {
-                'calories': int(float(full_match.group(1).replace(',', '.'))),
-                'protein': float(full_match.group(2).replace(',', '.')),
-                'fat': float(full_match.group(3).replace(',', '.')),
-                'carbs': float(full_match.group(4).replace(',', '.'))
-            }
-            logging.info(f"📊 Результат из ИТОГО: {result}")
-            return result
-        else:
-            # Извлекаем из секции ИТОГО по отдельности
-            logging.info(f"📊 Извлекаем из ИТОГО по отдельности")
-            calories = extract_calories_smart(itogo_text)
-            protein = extract_protein_smart(itogo_text)
-            fat = extract_fat_smart(itogo_text)
-            carbs = extract_carbs_smart(itogo_text)
-            
-            if calories:  # Если хоть калории нашли в ИТОГО
-                logging.info(f"📊 Извлечено из ИТОГО: калории={calories}, белки={protein}, жиры={fat}, углеводы={carbs}")
+        for full_pattern in full_patterns:
+            full_match = re.search(full_pattern, itogo_text, re.IGNORECASE | re.DOTALL)
+            if full_match:
+                logging.info(f"📊 Найден полный формат БЖУ в ИТОГО: {full_match.groups()}")
                 result = {
-                    'calories': calories,
-                    'protein': protein,
-                    'fat': fat,
-                    'carbs': carbs
+                    'calories': int(float(full_match.group(1).replace(',', '.'))),
+                    'protein': float(full_match.group(2).replace(',', '.')),
+                    'fat': float(full_match.group(3).replace(',', '.')),
+                    'carbs': float(full_match.group(4).replace(',', '.'))
                 }
-                logging.info(f"📊 Финальный результат из ИТОГО: {result}")
+                logging.info(f"📊 Результат из ИТОГО: {result}")
                 return result
+        
+        # Извлекаем из секции ИТОГО по отдельности
+        logging.info(f"📊 Полный формат не найден в ИТОГО, извлекаем по отдельности")
+        calories = extract_calories_smart(itogo_text)
+        protein = extract_protein_smart(itogo_text)
+        fat = extract_fat_smart(itogo_text)
+        carbs = extract_carbs_smart(itogo_text)
+        
+        if calories:  # Если хоть калории нашли в ИТОГО
+            logging.info(f"📊 Извлечено из ИТОГО: калории={calories}, белки={protein}, жиры={fat}, углеводы={carbs}")
+            result = {
+                'calories': calories,
+                'protein': protein,
+                'fat': fat,
+                'carbs': carbs
+            }
+            logging.info(f"📊 Финальный результат из ИТОГО: {result}")
+            return result
 
     # Если секции ИТОГО нет, ищем полный формат по всему тексту
     logging.info(f"📊 Секция ИТОГО не найдена, ищем полный формат по всему тексту")
-    full_pattern = r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров?.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов?'
+    full_patterns = [
+        # Формат без пробела перед г: 1016 ккал, 13.5г белка
+        r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)г?\s*белка.*?(\d+(?:[.,]\d+)?)г?\s*жир.*?(\d+(?:[.,]\d+)?)г?\s*углевод',
+        # Формат с пробелом перед г: 1016 ккал, 13.5 г белка
+        r'(\d+(?:[.,]\d+)?)\s*ккал.*?(\d+(?:[.,]\d+)?)\s*г\s*белка.*?(\d+(?:[.,]\d+)?)\s*г\s*жиров?.*?(\d+(?:[.,]\d+)?)\s*г\s*углеводов?',
+    ]
     
-    # Ищем ВСЕ вхождения полного формата
-    all_matches = list(re.finditer(full_pattern, response_text, re.IGNORECASE | re.DOTALL))
+    # Ищем ВСЕ вхождения полного формата по всем паттернам
+    all_matches = []
+    for full_pattern in full_patterns:
+        matches = list(re.finditer(full_pattern, response_text, re.IGNORECASE | re.DOTALL))
+        all_matches.extend(matches)
     
     if all_matches:
         # Берем ПОСЛЕДНЕЕ вхождение (обычно это итоговое значение)

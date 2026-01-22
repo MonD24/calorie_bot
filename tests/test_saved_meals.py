@@ -219,5 +219,57 @@ class TestMultipleDishesValidation:
         assert result['calories'] >= 300  # Морковь по-корейски + рыба
 
 
+class TestBJUExtraction:
+    """Тесты для извлечения БЖУ из ответа GPT"""
+    
+    def test_extract_nutrition_from_itogo_no_spaces(self):
+        """Тест извлечения БЖУ из формата ИТОГО без пробелов перед г"""
+        from utils.calorie_calculator import extract_nutrition_smart
+        
+        # Реальный формат ответа GPT - без пробела перед "г"
+        response = '''На фото:
+1. Греческий салат ~350г - 806 ккал, 12г белка, 72г жира, 30г углеводов
+2. Бокал пива ~500мл - 210 ккал, 1.5г белка, 0г жира, 17г углеводов
+
+ИТОГО: 1016 ккал, 13.5г белка, 72г жира, 47г углеводов'''
+        
+        result = extract_nutrition_smart(response)
+        
+        assert result['calories'] == 1016
+        assert result['protein'] == 13.5
+        assert result['fat'] == 72
+        assert result['carbs'] == 47
+    
+    def test_extract_nutrition_from_itogo_with_spaces(self):
+        """Тест извлечения БЖУ из формата ИТОГО с пробелами перед г"""
+        from utils.calorie_calculator import extract_nutrition_smart
+        
+        # Формат с пробелами
+        response = '''На фото:
+1. Творог с ягодами - 350 ккал, 25 г белка, 8 г жиров, 30 г углеводов
+
+ИТОГО: 350 ккал, 25 г белка, 8 г жиров, 30 г углеводов'''
+        
+        result = extract_nutrition_smart(response)
+        
+        assert result['calories'] == 350
+        assert result['protein'] == 25
+        assert result['fat'] == 8
+        assert result['carbs'] == 30
+    
+    def test_extract_nutrition_decimal_values(self):
+        """Тест извлечения дробных значений БЖУ"""
+        from utils.calorie_calculator import extract_nutrition_smart
+        
+        response = 'ИТОГО: 456 ккал, 23.5г белка, 15.8г жира, 42.3г углеводов'
+        
+        result = extract_nutrition_smart(response)
+        
+        assert result['calories'] == 456
+        assert result['protein'] == 23.5
+        assert result['fat'] == 15.8
+        assert result['carbs'] == 42.3
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
