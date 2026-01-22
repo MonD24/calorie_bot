@@ -166,5 +166,58 @@ class TestSaladCalorieValidation:
         assert result['fat'] >= 18
 
 
+class TestMultipleDishesValidation:
+    """Тесты для валидации нескольких блюд на фото"""
+    
+    def test_two_dishes_low_calories(self):
+        """Тест что два блюда не могут иметь слишком мало калорий"""
+        from utils.nutrition_validator import validate_nutrition_data
+        
+        # Симулируем ситуацию когда GPT занизил калории для двух блюд
+        nutrition = {
+            'calories': 186,  # Критически мало для двух блюд
+            'protein': 3.2,
+            'fat': 10.7,
+            'carbs': 19.4
+        }
+        
+        result = validate_nutrition_data(nutrition, "два блюда: макароны с котлетами, морковь по-корейски с рыбой")
+        
+        # Калории должны быть значительно увеличены (минимум 700 для двух блюд)
+        assert result['calories'] >= 700
+    
+    def test_pasta_with_cutlets_validation(self):
+        """Тест валидации макарон с котлетами"""
+        from utils.nutrition_validator import validate_nutrition_data
+        
+        nutrition = {
+            'calories': 200,  # Слишком мало для макарон с котлетами
+            'protein': 10.0,
+            'fat': 8.0,
+            'carbs': 25.0
+        }
+        
+        result = validate_nutrition_data(nutrition, "макароны с котлетами")
+        
+        # Минимум 500 ккал для макарон с котлетами
+        assert result['calories'] >= 500
+    
+    def test_korean_carrot_with_fish(self):
+        """Тест валидации моркови по-корейски с рыбой"""
+        from utils.nutrition_validator import validate_nutrition_data
+        
+        nutrition = {
+            'calories': 100,  # Слишком мало
+            'protein': 5.0,
+            'fat': 5.0,
+            'carbs': 10.0
+        }
+        
+        result = validate_nutrition_data(nutrition, "морковь по-корейски с рыбой")
+        
+        # Должны быть увеличены калории и жиры
+        assert result['calories'] >= 300  # Морковь по-корейски + рыба
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
