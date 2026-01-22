@@ -174,24 +174,47 @@ def extract_calories_from_photo_response(response: str) -> Optional[int]:
 
 def extract_description_from_photo_response(response: str) -> str:
     """Извлекает описание блюда из ответа GPT"""
-    # Проверяем на несколько блюд
-    multiple_dishes_match = re.search(r'На фото (два|три|2|3|несколько) блюд[а-я]*[:\s]*\n?(1\)|•|\d\.)', response, re.IGNORECASE)
     
-    if multiple_dishes_match or 'БЛЮДО 1' in response.upper() or '1)' in response:
-        # Это несколько блюд - собираем их описания
+    # Сначала пробуем найти описание в формате "На фото: 1. Блюдо1 ... 2. Блюдо2 ..."
+    # Формат GPT: "На фото:\n1. Греческий салат ~350г - 806 ккал...\n2. Бокал пива ~500мл - 210 ккал..."
+    
+    # Ищем блюда в формате "1. Название" или "1) Название" в начале строки
+    dish_pattern = r'^(\d)[.)]\s*([А-Яа-яЁёA-Za-z][^-\n]+?)(?:\s*[-~]|\s*$)'
+    dish_matches = re.findall(dish_pattern, response, re.MULTILINE)
+    
+    if len(dish_matches) >= 2:
+        # Нашли несколько блюд
         dishes = []
+        for num, desc in dish_matches[:3]:  # Максимум 3 блюда
+            desc = desc.strip()
+            # Очищаем от технических символов и веса
+            desc = re.sub(r'\s*~?\d+\s*[гg]?\s*$', '', desc)  # убираем "~350г" в конце
+            desc = re.sub(r'[📊💯🧮\*]+.*$', '', desc)
+            desc = desc.strip()
+            if desc and len(desc) > 2:
+                dishes.append(desc)
         
-        # Пробуем найти блюда по номерам
+        if len(dishes) >= 2:
+            result = "; ".join([f"{i+1}) {d}" for i, d in enumerate(dishes)])
+            return result
+        elif dishes:
+            return dishes[0]
+    
+    # Проверяем на явное указание нескольких блюд
+    multiple_dishes_match = re.search(r'На фото (два|три|2|3|несколько) блюд[а-я]*', response, re.IGNORECASE)
+    
+    if multiple_dishes_match or 'БЛЮДО 1:' in response.upper():
+        # Пробуем найти блюда по формату "БЛЮДО 1: Название"
         dish_patterns = [
-            r'(?:БЛЮДО\s*)?1[).\s:]+([^2\n]+?)(?=\n|БЛЮДО|2\)|$)',
-            r'(?:БЛЮДО\s*)?2[).\s:]+([^3\n]+?)(?=\n|БЛЮДО|3\)|$)',
+            r'БЛЮДО\s*1[:\s]+([А-Яа-яЁё][^.\n]+)',
+            r'БЛЮДО\s*2[:\s]+([А-Яа-яЁё][^.\n]+)',
         ]
         
+        dishes = []
         for pattern in dish_patterns:
             match = re.search(pattern, response, re.IGNORECASE)
             if match:
                 dish_desc = match.group(1).strip()
-                # Очищаем от лишних символов
                 dish_desc = re.sub(r'[📊💯🧮\*]+.*$', '', dish_desc)
                 dish_desc = re.sub(r'\s+', ' ', dish_desc).strip()
                 if dish_desc and len(dish_desc) > 3:
@@ -202,17 +225,30 @@ def extract_description_from_photo_response(response: str) -> str:
         elif dishes:
             return dishes[0]
     
-    # Ищем строку "На фото..." до первого ШАГа, расчётов или технических символов
-    match = re.search(r'На фото (.+?)(?=\n\n|📊|ШАГ|~\d+г:|ИТОГО:|Расчет|БЛЮДО\s*\d|$)', response, re.IGNORECASE | re.DOTALL)
+    # Ищем строку "На фото..." до первого расчёта
+    match = re.search(r'На фото[:\s]+(.+?)(?=\n\n|📊|ШАГ|~\d+г:|ИТОГО:|Расчет|\d+\s*ккал|$)', response, re.IGNORECASE | re.DOTALL)
     if match:
         description = match.group(1).strip()
-        # Убираем технические символы и лишний текст в конце
-        description = re.sub(r'📊.*$', '', description)  # убираем все после 📊
-        description = re.sub(r'\s*Расчет.*$', '', description)  # убираем "Расчет калорий.."
-        description = re.sub(r'\.$', '', description)  # убираем точку в конце
-        # Очищаем от лишних переносов, но сохраняем структуру
+        # Убираем технические символы и лишний текст
+        description = re.sub(r'📊.*$', '', description)
+        description = re.sub(r'\s*Расчет.*$', '', description)
+        description = re.sub(r'\.$', '', description)
         description = re.sub(r'\s+', ' ', description)
-        return description.strip()
+        
+        # Если описание содержит нумерованный список, извлекаем названия блюд
+        if re.search(r'\d[.)]\s', description):
+            parts = re.findall(r'\d[.)]\s*([А-Яа-яЁёA-Za-z][^,;\d]+)', description)
+            if parts:
+                clean_parts = []
+                for p in parts[:3]:
+                    p = re.sub(r'\s*[-~].*$', '', p).strip()
+                    if p and len(p) > 2:
+                        clean_parts.append(p)
+                if clean_parts:
+                    return "; ".join([f"{i+1}) {p}" for i, p in enumerate(clean_parts)])
+        
+        if description and len(description) > 3:
+            return description.strip()
 
     # Альтернативный поиск - ищем полное описание в первых строках
     lines = response.split('\n')
@@ -220,21 +256,22 @@ def extract_description_from_photo_response(response: str) -> str:
 
     for i, line in enumerate(lines):
         line = line.strip()
-        # Пропускаем пустые строки и технические символы в начале
+        # Пропускаем пустые строки и технические символы
         if not line or line.startswith(('📋', '📊', '💯', '🎯')):
             continue
-        # Останавливаемся на расчётах или шагах
-        if any(keyword in line for keyword in ['ШАГ', '~', 'г:', 'ИТОГО', '165×', '116×', 'Расчет', 'БЛЮДО 1', 'БЛЮДО 2']):
+        # Останавливаемся на расчётах
+        if any(keyword in line for keyword in ['ШАГ', 'ИТОГО', 'Расчет', 'ккал', 'белка', 'жир']):
             break
-        # Собираем строки описания
-        if len(line) > 5:
+        # Собираем строки описания (только текстовые, не с цифрами расчётов)
+        if len(line) > 5 and not re.match(r'^[\d~×=\-\+]', line):
             description_lines.append(line)
+        # Ограничиваем количество строк
+        if len(description_lines) >= 3:
+            break
 
     if description_lines:
         full_description = ' '.join(description_lines)
-        # Убираем технические символы
         full_description = re.sub(r'^[📋📊💯🎯\-\s]*', '', full_description)
-        # Убираем лишний текст в конце
         full_description = re.sub(r'📊.*$', '', full_description)
         full_description = re.sub(r'\s*Расчет.*$', '', full_description)
         return full_description.strip()
